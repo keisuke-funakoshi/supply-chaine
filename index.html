@@ -8,25 +8,21 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="商流シミュレーター" />
   <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #020817; }</style>
+  <script>
+    window.onerror = function(msg, src, line, col, err) {
+      document.getElementById('root').innerHTML =
+        '<div style="color:red;padding:20px;font-family:monospace;background:#fff;white-space:pre-wrap">Error: ' + msg + '\nLine: ' + line + '</div>';
+    };
+  </script>
 </head>
 <body>
   <div id="root"></div>
-
-  <!-- React + ReactDOM (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Babel standalone for JSX transform -->
   <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
-  <!-- SheetJS for Excel export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
   <script type="text/babel" data-presets="env,react">
-// Expose React hooks from global React
 const { useState, useRef, useCallback, useEffect, useMemo } = React;
-
-// SheetJS alias
-const XLSX_LIB = window.XLSX;
-
 // ─── ユーティリティ ───────────────────────────────────────────────────
 const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
 let uid = 300;
@@ -938,7 +934,7 @@ function App() {
   const [themes, setThemesRaw] = useState(() => loadThemes());
   const [activeThemeId, setActiveThemeIdRaw] = useState(() => loadActiveId(loadThemes()));
   const [modal, setModal] = useState(null);
-  const [view, setView] = useState("matrix");
+  const [view, setView] = useState("flow");
   const [flowPartId, setFlowPartId] = useState(null);
   const [filterCatId, setFilterCatId] = useState(null);
   const [newPartName, setNewPartName] = useState("");
@@ -1148,7 +1144,7 @@ function App() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-          {[["themes","📋 テーマ一覧"], ["theme","⚙ 設定"], ["matrix","マトリクス"], ["flow","フロー図"], ["summary","サマリー"], ["archive","📁 アーカイブ"]].map(([v, label]) => (
+          {[["themes","📋 テーマ一覧"], ["theme","⚙ 設定"], ["flow","フロー図"], ["summary","サマリー"], ["archive","📁 アーカイブ"]].map(([v, label]) => (
             <button key={v} onClick={() => setView(v)}
               style={{ background: view === v ? "linear-gradient(135deg,#6366f1,#0ea5e9)" : "#1e293b", border: "none", borderRadius: 7, color: view === v ? "#fff" : "#64748b", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
               {label}
@@ -1369,63 +1365,82 @@ function App() {
           </div>
         )}
 
-        {/* ── フロービュー ── */}
+        {/* ── フロービュー（マトリクス統合） ── */}
         {view === "flow" && (
           <div>
-            {/* モード切り替え + 部品セレクタ */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
-              {/* 全部品 / 1部品 トグル */}
-              <div style={{ display: "flex", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, overflow: "hidden" }}>
-                <button onClick={() => setFlowPartId("__all__")}
-                  style={{ background: (flowPartId === "__all__" || !flowPartId) ? "linear-gradient(135deg,#6366f1,#0ea5e9)" : "transparent", border: "none", color: (flowPartId === "__all__" || !flowPartId) ? "#fff" : "#64748b", padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                  全部品
-                </button>
-                <button onClick={() => setFlowPartId(currentFlowPart?.id || parts[0]?.id)}
-                  style={{ background: (flowPartId && flowPartId !== "__all__") ? "linear-gradient(135deg,#6366f1,#0ea5e9)" : "transparent", border: "none", color: (flowPartId && flowPartId !== "__all__") ? "#fff" : "#64748b", padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                  部品を選択
-                </button>
+            {/* ── ツールバー：部品・工程追加 ── */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <select value={newPartCatId || categories[0]?.id || ""} onChange={e => setNewPartCatId(e.target.value)}
+                  style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPart()} placeholder="部品名"
+                  style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 100 }} />
+                <button onClick={addPart} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 部品</button>
               </div>
+              <div style={{ width: 1, height: 20, background: "#1e293b" }} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input value={newProcName} onChange={e => setNewProcName(e.target.value)} onKeyDown={e => e.key === "Enter" && addProcess()} placeholder="工程名"
+                  style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 100 }} />
+                <button onClick={addProcess} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 工程</button>
+              </div>
+            </div>
 
-              {/* 1部品モード時の部品セレクタ */}
-              {flowPartId && flowPartId !== "__all__" && (
-                <>
-                  {categories.map(cat => {
-                    const catParts = parts.filter(p => p.categoryId === cat.id);
-                    if (!catParts.length) return null;
-                    const activeCatId = getCatById(parts.find(p => p.id === flowPartId)?.categoryId)?.id;
-                    return (
-                      <div key={cat.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, display: "inline-block", flexShrink: 0 }} />
-                        {catParts.map(part => (
-                          <button key={part.id} onClick={() => setFlowPartId(part.id)}
-                            style={{ background: flowPartId === part.id ? cat.color + "33" : "#1e293b", border: `1px solid ${flowPartId === part.id ? cat.color : "#334155"}`, borderRadius: 7, color: flowPartId === part.id ? cat.color : "#64748b", padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
-                            {part.name}
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </>
-              )}
+            {/* ── 大分類フィルタ（全部品 / 大分類 / 個別部品） ── */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+              {/* 全部品ボタン */}
+              <button onClick={() => setFlowPartId("__all__")}
+                style={{ background: (!flowPartId || flowPartId === "__all__") ? "#1e293b" : "transparent", border: `1px solid ${(!flowPartId || flowPartId === "__all__") ? "#475569" : "#1e293b"}`, borderRadius: 20, color: (!flowPartId || flowPartId === "__all__") ? "#e2e8f0" : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer", fontWeight: (!flowPartId || flowPartId === "__all__") ? 700 : 400 }}>
+                すべて
+              </button>
+              {/* 大分類ごとに色ドット＋部品ボタン */}
+              {categories.map(cat => {
+                const catParts = parts.filter(p => p.categoryId === cat.id);
+                if (!catParts.length) return null;
+                const isActiveCat = catParts.some(p => p.id === flowPartId);
+                return (
+                  <div key={cat.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "#0a1220", border: `1px solid ${isActiveCat ? cat.color + "66" : "#1e293b"}`, borderRadius: 20, padding: "2px 6px 2px 8px" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, color: cat.color, fontWeight: 700, marginRight: 2 }}>{cat.name}</span>
+                    {catParts.map(part => (
+                      <button key={part.id} onClick={() => setFlowPartId(flowPartId === part.id ? "__all__" : part.id)}
+                        style={{ background: flowPartId === part.id ? cat.color + "33" : "transparent", border: `1px solid ${flowPartId === part.id ? cat.color : "#334155"}`, borderRadius: 14, color: flowPartId === part.id ? cat.color : "#64748b", padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                        {part.name}
+                      </button>
+                    ))}
+                    <button onClick={() => { setNewPartCatId(cat.id); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }} title="この大分類に部品追加"
+                      style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1 }}>＋</button>
+                  </div>
+                );
+              })}
             </div>
 
             <div style={{ fontSize: 10, color: "#334155", marginBottom: 10 }}>
               破線：候補ルート　実線（緑）：採用ルート　ノードクリックで採用切替
             </div>
 
-            {/* 全部品モード */}
-            {(!flowPartId || flowPartId === "__all__") && (
+            {/* ── フロー図本体 ── */}
+            {(!flowPartId || flowPartId === "__all__") ? (
               <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
                 <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
               </div>
+            ) : (
+              currentFlowPart && (
+                <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
+                  <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
+                </div>
+              )
             )}
 
-                        {/* 1部品モード */}
-            {flowPartId && flowPartId !== "__all__" && currentFlowPart && (
-              <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
-              </div>
-            )}
+            {/* ── 凡例 ── */}
+            <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 10, color: "#475569" }}>
+              {[{ color: "#22c55e", label: "採用確定" }, { color: "#f59e0b", label: "検討中" }, { color: "#1e293b", label: "未着手" }].map(l => (
+                <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: l.color }} />{l.label}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1638,8 +1653,6 @@ function App() {
   );
 }
 
-
-// Mount
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
   </script>
