@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>商流シミュレーター</title>
+  <meta name="theme-color" content="#020817" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="商流シミュレーター" />
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #020817; }</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React + ReactDOM (UMD) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel standalone for JSX transform -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- SheetJS for Excel export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+// Expose React hooks from global React
+const { useState, useRef, useCallback, useEffect, useMemo } = React;
+
+// SheetJS alias
+const XLSX_LIB = window.XLSX;
+
+// ─── ユーティリティ ───────────────────────────────────────────────────
+const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
+let uid = 300;
+const newId = () => `id${uid++}`;
+
+function scoreSupplier(supplier, allSuppliers) {
+  const parse = (v) => parseFloat(v) || 0;
+  const vals = (key) => allSuppliers.map((s) => parse(s[key])).filter(Boolean);
+  const norm = (val, arr, inv = false) => {
+    if (!arr.length || !val) return 0;
+    const [mn, mx] = [Math.min(...arr), Math.max(...arr)];
+    if (mx === mn) return 100;
+    const n = ((val - mn) / (mx - mn)) * 100;
+    return Math.round(inv ? 100 - n : n);
+  };
+  const p = (k) => parse(supplier[k]);
+  return Math.round(
+    norm(p("cost"), vals("cost"), true) * SCORE_WEIGHTS.cost +
+    norm(p("leadTime"), vals("leadTime"), true) * SCORE_WEIGHTS.leadTime +
+    norm(p("quality"), vals("quality")) * SCORE_WEIGHTS.quality +
+    norm(p("moq"), vals("moq"), true) * SCORE_WEIGHTS.moq
+  );
+}
+
+function useDragSort(items, setItems) {
+  const dragIdx = useRef(null);
+  return {
+    onDragStart: (i) => { dragIdx.current = i; },
+    onDragOver: (e, i) => {
+      e.preventDefault();
+      if (dragIdx.current === null || dragIdx.current === i) return;
+      const next = [...items];
+      const [m] = next.splice(dragIdx.current, 1);
+      next.splice(i, 0, m);
+      dragIdx.current = i;
+      setItems(next);
+    },
+    onDragEnd: () => { dragIdx.current = null; },
+  };
+}
+
+// ─── アーカイブ (localStorage) ────────────────────────────────────────
+const ARCHIVE_KEY = "shoury_archive_v1";
+function loadArchive() {
+  try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]"); } catch { return []; }
+}
+function saveToArchive(snapshot) {
+  const list = loadArchive();
+  list.unshift(snapshot);
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list.slice(0, 50)));
+}
+function deleteFromArchive(id) {
+  const list = loadArchive().filter(s => s.id !== id);
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list));
+}
+
+// ─── バックアップ（JSONエクスポート/インポート） ───────────────────────
+function exportBackup(theme, categories, parts, processes, matrix, archive) {
+  const data = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    current: { theme, categories, parts, processes, matrix },
+    archive,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `shoury_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(file, onSuccess, onError) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.version || !data.current) throw new Error("形式が不正です");
+      onSuccess(data);
+    } catch (err) {
+      onError("読み込みに失敗しました: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ─── Excel出力（図形矢印付き） ─────────────────────────────────────────
+async function exportExcel(theme, categories, parts, processes, getCell) {
+  const XLSX = { utils: window.XLSX.utils, writeFile: window.XLSX.writeFile };
+
+  // openpyxl は使えないのでSheetJSで矢印なし版 + 別途SVG矢印をBase64画像で埋め込む
+  // SheetJSはコネクタ線に対応しないため、矢印はセル内テキスト "→" で表現し
+  // Anthropic API経由でpython生成する代わりにクライアントサイドで実現可能な範囲で実装
+  const wb = XLSX.utils.book_new();
+
+  categories.forEach(cat => {
+    const catParts = parts.filter(p => p.categoryId === cat.id);
+    if (!catParts.length) return;
+
+    const sheetName = cat.name.slice(0, 31);
+    const aoa = [];
+
+    // Header row 1: theme
+    aoa.push([theme.name]);
+    // Header row 2: category
+    aoa.push([`【${cat.name}】`]);
+    aoa.push([]);
+
+    // Process header row with arrows
+    const procHeader = ["部品名"];
+    processes.forEach((proc, pi) => {
+      procHeader.push(proc.name);
+      if (pi < processes.length - 1) procHeader.push("→");
+    });
+    aoa.push(procHeader);
+
+    // Each part row
+    catParts.forEach(part => {
+      const row = [part.name];
+      processes.forEach((_, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers?.find(s => s.id === cell.selected);
+        if (sel) {
+          row.push(sel.name + "\n¥" + parseFloat(sel.cost || 0).toLocaleString() + "  LT:" + (sel.leadTime || "?") + "日");
+        } else {
+          const count = cell.suppliers?.length || 0;
+          row.push(count > 0 ? `(${count}社検討中)` : "");
+        }
+        if (ci < processes.length - 1) row.push("→");
+      });
+      aoa.push(row);
+
+      // Candidate rows (non-selected)
+      const maxCandidates = Math.max(...processes.map((_, ci) => {
+        const cell = getCell(part.id, ci);
+        return (cell.suppliers || []).filter(s => s.id !== cell.selected).length;
+      }), 0);
+
+      for (let ri = 0; ri < maxCandidates; ri++) {
+        const candRow = [""];
+        processes.forEach((_, ci) => {
+          const cell = getCell(part.id, ci);
+          const others = (cell.suppliers || []).filter(s => s.id !== cell.selected);
+          const s = others[ri];
+          if (s) {
+            candRow.push(`  候補: ${s.name}  ¥${parseFloat(s.cost || 0).toLocaleString()}`);
+          } else {
+            candRow.push("");
+          }
+          if (ci < processes.length - 1) candRow.push("");
+        });
+        aoa.push(candRow);
+      }
+      aoa.push([]);
+    });
+
+    // Summary section
+    aoa.push([]);
+    aoa.push(["── コスト集計 ──"]);
+    const summaryHeader = ["部品名", ...processes.map(p => p.name), "合計"];
+    aoa.push(summaryHeader);
+    catParts.forEach(part => {
+      let total = 0;
+      const row = [part.name];
+      processes.forEach((_, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers?.find(s => s.id === cell.selected);
+        const cost = sel?.cost ? parseFloat(sel.cost) : 0;
+        total += cost;
+        row.push(cost ? cost : "");
+      });
+      row.push(total || "");
+      aoa.push(row);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Column widths
+    const colWidths = [{ wch: 14 }];
+    processes.forEach(() => {
+      colWidths.push({ wch: 24 });
+      colWidths.push({ wch: 4 });
+    });
+    ws["!cols"] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  // サマリーシート
+  const summaryAoa = [];
+  summaryAoa.push([theme.name, "", "商流サマリー"]);
+  summaryAoa.push([]);
+  summaryAoa.push(["大分類", "部品名", ...processes.map(p => p.name), "部品合計"]);
+  categories.forEach(cat => {
+    parts.filter(p => p.categoryId === cat.id).forEach((part, pi) => {
+      let total = 0;
+      const row = [pi === 0 ? cat.name : "", part.name];
+      processes.forEach((_, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers?.find(s => s.id === cell.selected);
+        const cost = sel ? `${sel.name} ¥${parseFloat(sel.cost || 0).toLocaleString()}` : "";
+        const c = sel?.cost ? parseFloat(sel.cost) : 0;
+        total += c;
+        row.push(cost);
+      });
+      row.push(total || "");
+      summaryAoa.push(row);
+    });
+    summaryAoa.push([]);
+  });
+  const summaryWs = XLSX.utils.aoa_to_sheet(summaryAoa);
+  summaryWs["!cols"] = [{ wch: 14 }, { wch: 14 }, ...processes.map(() => ({ wch: 26 })), { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, summaryWs, "サマリー");
+
+  XLSX.writeFile(wb, `${theme.name}_商流検討.xlsx`);
+}
+
+// ─── PDF出力（フロー図SVGをPDF化） ────────────────────────────────────
+function exportFlowPDF(partName, processes, cols) {
+  const NODE_W = 200, NODE_H = 70, NODE_GAP = 10, COL_GAP = 60, HEADER_H = 40, PAD = 24;
+  const maxRows = Math.max(...cols.map(c => c.suppliers.length), 1);
+  const svgW = PAD * 2 + cols.length * NODE_W + (cols.length - 1) * COL_GAP;
+  const svgH = PAD + HEADER_H + maxRows * (NODE_H + NODE_GAP) + PAD;
+
+  const nodeCx = (ci) => PAD + ci * (NODE_W + COL_GAP);
+  const nodeCy = (si) => PAD + HEADER_H + si * (NODE_H + NODE_GAP);
+
+  // Build SVG string
+  let svgParts = [];
+  svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH + 60}" style="background:#020817;font-family:Arial,sans-serif">`);
+
+  // Title
+  svgParts.push(`<text x="${PAD}" y="20" fill="#f1f5f9" font-size="14" font-weight="bold">${partName} — 商流フロー図</text>`);
+
+  // Process headers
+  cols.forEach((col, ci) => {
+    const x = nodeCx(ci);
+    svgParts.push(`<rect x="${x}" y="${PAD + 4}" width="${NODE_W}" height="${HEADER_H - 8}" rx="6" fill="#1e293b"/>`);
+    svgParts.push(`<text x="${x + NODE_W/2}" y="${PAD + 4 + (HEADER_H-8)/2 + 5}" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="bold">${col.proc}</text>`);
+    if (ci < cols.length - 1) {
+      svgParts.push(`<text x="${x + NODE_W + COL_GAP/2}" y="${PAD + 4 + (HEADER_H-8)/2 + 5}" text-anchor="middle" fill="#475569" font-size="18">→</text>`);
+    }
+  });
+
+  // Lines
+  for (let ci = 0; ci < cols.length - 1; ci++) {
+    const from = cols[ci], to = cols[ci + 1];
+    from.suppliers.forEach((fs, fsi) => {
+      to.suppliers.forEach((ts, tsi) => {
+        const adopted = from.selected === fs.id && to.selected === ts.id;
+        const semiAdopted = from.selected === fs.id || to.selected === ts.id;
+        const x1 = nodeCx(ci) + NODE_W, y1 = nodeCy(fsi) + NODE_H/2;
+        const x2 = nodeCx(ci+1), y2 = nodeCy(tsi) + NODE_H/2;
+        const mx = (x1+x2)/2;
+        if (adopted) {
+          svgParts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#22c55e" stroke-width="3" marker-end="url(#ag)"/>`);
+        } else if (semiAdopted) {
+          svgParts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3b6fa0" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#as)" opacity="0.7"/>`);
+        } else {
+          svgParts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#1e3a5f" stroke-width="1" stroke-dasharray="4,3" opacity="0.4"/>`);
+        }
+      });
+    });
+  }
+
+  // Nodes
+  cols.forEach((col, ci) => {
+    col.suppliers.forEach((s, si) => {
+      const x = nodeCx(ci), y = nodeCy(si);
+      const isSel = col.selected === s.id;
+      const bg = isSel ? "#0c2040" : "#0f172a";
+      const border = isSel ? "#0ea5e9" : "#1e293b";
+      const strokeW = isSel ? 2 : 1;
+      svgParts.push(`<rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="7" fill="${bg}" stroke="${border}" stroke-width="${strokeW}"/>`);
+      if (isSel) svgParts.push(`<rect x="${x+4}" y="${y-8}" width="36" height="14" rx="7" fill="#0ea5e9"/><text x="${x+22}" y="${y+1}" text-anchor="middle" fill="#fff" font-size="8" font-weight="bold">✓ 採用</text>`);
+      svgParts.push(`<text x="${x+10}" y="${y+22}" fill="${isSel ? '#f1f5f9' : '#94a3b8'}" font-size="11" font-weight="${isSel ? 'bold' : 'normal'}">${s.name || "未入力"}</text>`);
+      if (s.cost) svgParts.push(`<text x="${x+10}" y="${y+40}" fill="#0ea5e9" font-size="10">¥${parseFloat(s.cost).toLocaleString()}</text>`);
+      if (s.leadTime) svgParts.push(`<text x="${x+110}" y="${y+40}" fill="#64748b" font-size="10">LT:${s.leadTime}日</text>`);
+      if (s.quality) svgParts.push(`<text x="${x+10}" y="${y+56}" fill="#64748b" font-size="9">品質:${s.quality}/100　MOQ:${s.moq || "?"}個</text>`);
+    });
+  });
+
+  // Arrow defs
+  svgParts.push('<defs><marker id="ag" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#22c55e"/></marker><marker id="as" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3b6fa0"/></marker></defs>');
+  svgParts.push(`</svg>`);
+
+  const svgStr = svgParts.join('\n');
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+
+  // Open in new window and print as PDF
+  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + partName + ' 商流フロー図</title><style>body{margin:0;background:#020817}@media print{body{margin:0}@page{size:landscape;margin:8mm}}</style></head><body><img src="' + url + '" style="max-width:100%;height:auto" onload="setTimeout(()=>window.print(),500)"/></body></html>';
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
+// ─── サンプルデータ ───────────────────────────────────────────────────
+// 階層: テーマ > 大分類(category) > 部品(part) > 工程×サプライヤ
+const SAMPLE_THEME = { id: "t1", name: "次世代スマートセンサー開発" };
+
+const SAMPLE_CATEGORIES = [
+  { id: "cat1", name: "筐体・構造部品", color: "#6366f1" },
+  { id: "cat2", name: "電子・基板部品", color: "#0ea5e9" },
+  { id: "cat3", name: "電源・エネルギー", color: "#f59e0b" },
+];
+
+const SAMPLE_PARTS = [
+  { id: "p1", categoryId: "cat1", name: "筐体フレーム" },
+  { id: "p2", categoryId: "cat1", name: "カバーパネル" },
+  { id: "p3", categoryId: "cat2", name: "メイン基板" },
+  { id: "p4", categoryId: "cat2", name: "センサーモジュール" },
+  { id: "p5", categoryId: "cat3", name: "電源ユニット" },
+];
+
+const SAMPLE_PROCESSES = [
+  { id: "c0", name: "材料調達" },
+  { id: "c1", name: "部品加工" },
+  { id: "c2", name: "組立" },
+  { id: "c3", name: "検査・品質" },
+  { id: "c4", name: "物流・納品" },
+];
+
+const SAMPLE_MATRIX = {
+  "p1_0": { selected: "s101", suppliers: [
+    { id: "s101", name: "東洋鋼材", cost: "45000", leadTime: "14", quality: "88", moq: "100", notes: "国内在庫豊富" },
+    { id: "s102", name: "大阪メタル", cost: "38000", leadTime: "21", quality: "82", moq: "200", notes: "価格優位だがMOQ大" },
+    { id: "s103", name: "中部スチール", cost: "42000", leadTime: "10", quality: "91", moq: "50", notes: "品質高め・短納期" },
+  ]},
+  "p1_1": { selected: "s111", suppliers: [
+    { id: "s111", name: "精密加工 山田", cost: "32000", leadTime: "18", quality: "90", moq: "50", notes: "切削精度◎" },
+    { id: "s112", name: "技研工業", cost: "28000", leadTime: "25", quality: "84", moq: "100", notes: "コスト優位" },
+  ]},
+  "p1_2": { selected: "s121", suppliers: [
+    { id: "s121", name: "関東アッセンブリ", cost: "15000", leadTime: "7", quality: "87", moq: "20", notes: "近隣・柔軟対応" },
+    { id: "s122", name: "九州製造", cost: "12000", leadTime: "12", quality: "85", moq: "50", notes: "" },
+  ]},
+  "p1_3": { selected: "s131", suppliers: [
+    { id: "s131", name: "SGS Japan", cost: "8000", leadTime: "3", quality: "95", moq: "1", notes: "第三者認証対応" },
+    { id: "s132", name: "自社検査", cost: "3000", leadTime: "2", quality: "80", moq: "1", notes: "コスト安・リソース要" },
+  ]},
+  "p1_4": { selected: "s141", suppliers: [
+    { id: "s141", name: "佐川急便", cost: "2500", leadTime: "2", quality: "88", moq: "1", notes: "" },
+    { id: "s142", name: "ヤマト物流", cost: "2800", leadTime: "1", quality: "92", moq: "1", notes: "追跡精度高い" },
+  ]},
+  "p2_0": { selected: "s201", suppliers: [
+    { id: "s201", name: "東洋鋼材", cost: "28000", leadTime: "14", quality: "88", moq: "50", notes: "" },
+    { id: "s202", name: "アルミ工業 東", cost: "24000", leadTime: "18", quality: "85", moq: "100", notes: "アルミ板材専門" },
+  ]},
+  "p2_1": { selected: null, suppliers: [
+    { id: "s211", name: "精密加工 山田", cost: "18000", leadTime: "15", quality: "90", moq: "30", notes: "" },
+    { id: "s212", name: "板金工房 北川", cost: "15000", leadTime: "20", quality: "83", moq: "50", notes: "板金特化" },
+  ]},
+  "p3_0": { selected: "s301", suppliers: [
+    { id: "s301", name: "村田製作所", cost: "62000", leadTime: "30", quality: "96", moq: "500", notes: "品質最高・MOQ大" },
+    { id: "s302", name: "TDK商事", cost: "55000", leadTime: "25", quality: "93", moq: "200", notes: "" },
+    { id: "s303", name: "中国調達品", cost: "31000", leadTime: "45", quality: "78", moq: "1000", notes: "長納期・要品質管理" },
+  ]},
+  "p3_1": { selected: "s311", suppliers: [
+    { id: "s311", name: "SMT技研", cost: "48000", leadTime: "14", quality: "94", moq: "30", notes: "実装精度◎" },
+    { id: "s312", name: "電子工房 佐藤", cost: "41000", leadTime: "20", quality: "88", moq: "50", notes: "" },
+  ]},
+  "p3_2": { selected: null, suppliers: [
+    { id: "s321", name: "関東アッセンブリ", cost: "20000", leadTime: "7", quality: "87", moq: "20", notes: "" },
+    { id: "s322", name: "ハイテック組立", cost: "24000", leadTime: "5", quality: "91", moq: "10", notes: "精密組立向け" },
+  ]},
+  "p3_3": { selected: "s331", suppliers: [
+    { id: "s331", name: "SGS Japan", cost: "12000", leadTime: "4", quality: "95", moq: "1", notes: "" },
+  ]},
+  "p4_0": { selected: "s401", suppliers: [
+    { id: "s401", name: "ソニーセミコン", cost: "95000", leadTime: "60", quality: "98", moq: "200", notes: "最高精度センサー" },
+    { id: "s402", name: "オムロン", cost: "72000", leadTime: "45", quality: "95", moq: "100", notes: "" },
+  ]},
+  "p4_1": { selected: "s411", suppliers: [
+    { id: "s411", name: "SMT技研", cost: "35000", leadTime: "14", quality: "94", moq: "20", notes: "" },
+  ]},
+  "p5_0": { selected: "s501", suppliers: [
+    { id: "s501", name: "TDK商事", cost: "28000", leadTime: "20", quality: "93", moq: "100", notes: "" },
+    { id: "s502", name: "コーセル", cost: "33000", leadTime: "15", quality: "96", moq: "50", notes: "高信頼性品" },
+  ]},
+  "p5_1": { selected: "s511", suppliers: [
+    { id: "s511", name: "電源専門 和田", cost: "25000", leadTime: "10", quality: "94", moq: "20", notes: "電源特化・品質高" },
+    { id: "s512", name: "技研工業", cost: "19000", leadTime: "18", quality: "86", moq: "50", notes: "" },
+  ]},
+  "p5_2": { selected: "s521", suppliers: [
+    { id: "s521", name: "協和テック", cost: "11000", leadTime: "6", quality: "92", moq: "10", notes: "" },
+  ]},
+  "p5_3": { selected: null, suppliers: [
+    { id: "s531", name: "UL Japan", cost: "15000", leadTime: "10", quality: "98", moq: "1", notes: "安全規格取得済" },
+    { id: "s532", name: "自社検査", cost: "3000", leadTime: "2", quality: "80", moq: "1", notes: "電源安全規格要確認" },
+  ]},
+};
+
+// ─── カラーパレット ───────────────────────────────────────────────────
+const CAT_COLORS = ["#6366f1","#0ea5e9","#f59e0b","#22c55e","#ec4899","#8b5cf6","#14b8a6"];
+
+// ─── ScoreBar ────────────────────────────────────────────────────────
+function ScoreBar({ value }) {
+  const color = value >= 70 ? "#22c55e" : value >= 40 ? "#f59e0b" : "#ef4444";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ width: `${value}%`, height: "100%", background: color, borderRadius: 2, transition: "width 0.4s" }} />
+      </div>
+      <span style={{ fontSize: 10, fontWeight: 700, color, minWidth: 24 }}>{value}</span>
+    </div>
+  );
+}
+
+// ─── テーマ/大分類設定パネル ──────────────────────────────────────────
+function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts }) {
+  const [newCatName, setNewCatName] = useState("");
+  const drag = useDragSort(categories, setCategories);
+
+  const addCategory = () => {
+    const name = newCatName.trim();
+    if (!name) return;
+    const color = CAT_COLORS[categories.length % CAT_COLORS.length];
+    setCategories([...categories, { id: newId(), name, color }]);
+    setNewCatName("");
+  };
+
+  const removeCategory = (catId) => {
+    setCategories(categories.filter(c => c.id !== catId));
+    setParts(parts.filter(p => p.categoryId !== catId));
+  };
+
+  const updateCategoryName = (catId, name) =>
+    setCategories(categories.map(c => c.id === catId ? { ...c, name } : c));
+
+  return (
+    <div style={{ maxWidth: 680, margin: "0 auto" }}>
+      {/* テーマ名 */}
+      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: "24px 28px", marginBottom: 20 }}>
+        <div style={{ fontSize: 11, color: "#475569", letterSpacing: "0.08em", marginBottom: 8 }}>開発テーマ名</div>
+        <input
+          value={theme.name}
+          onChange={e => setTheme({ ...theme, name: e.target.value })}
+          style={{ width: "100%", background: "transparent", border: "none", borderBottom: "2px solid #334155", color: "#f1f5f9", fontSize: 22, fontWeight: 800, outline: "none", padding: "4px 0", boxSizing: "border-box" }}
+          placeholder="開発テーマ名を入力"
+        />
+      </div>
+
+      {/* 大分類リスト */}
+      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: "24px 28px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#f1f5f9" }}>製品大分類</div>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>テーマ内の製品カテゴリ。各大分類に部品を紐づけて管理します</div>
+          </div>
+          <div style={{ fontSize: 12, color: "#334155" }}>{categories.length} 分類</div>
+        </div>
+
+        {categories.length === 0 && (
+          <div style={{ textAlign: "center", padding: "32px 0", color: "#334155", border: "2px dashed #1e293b", borderRadius: 10, marginBottom: 16 }}>
+            大分類を追加して製品を整理しましょう
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+          {categories.map((cat, i) => {
+            const partCount = parts.filter(p => p.categoryId === cat.id).length;
+            return (
+              <div
+                key={cat.id}
+                draggable
+                onDragStart={() => drag.onDragStart(i)}
+                onDragOver={e => drag.onDragOver(e, i)}
+                onDragEnd={drag.onDragEnd}
+                style={{ display: "flex", alignItems: "center", gap: 12, background: "#080f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "12px 14px", cursor: "grab" }}
+              >
+                <span style={{ color: "#334155", fontSize: 16 }}>⠿</span>
+                <div style={{ width: 14, height: 14, borderRadius: "50%", background: cat.color, flexShrink: 0 }} />
+                <input
+                  value={cat.name}
+                  onChange={e => updateCategoryName(cat.id, e.target.value)}
+                  style={{ flex: 1, background: "transparent", border: "none", color: "#e2e8f0", fontSize: 14, fontWeight: 600, outline: "none" }}
+                />
+                <span style={{ fontSize: 11, color: "#475569", flexShrink: 0 }}>{partCount}部品</span>
+                <button
+                  onClick={() => showConfirm(`「${cat.name}」を削除しますか？（この大分類に属する部品もすべて削除されます）`, () => removeCategory(cat.id))}
+                  style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 2 }}
+                >×</button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 追加フォーム */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            value={newCatName}
+            onChange={e => setNewCatName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addCategory()}
+            placeholder="大分類名を入力（例: 光学部品）"
+            style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#e2e8f0", padding: "8px 12px", fontSize: 13, outline: "none" }}
+          />
+          <button
+            onClick={addCategory}
+            style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 8, color: "#fff", padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+          >＋ 追加</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── セル詳細モーダル ─────────────────────────────────────────────────
+function CellModal({ partName, processName, cellData, onUpdate, onClose }) {
+  const suppliers = cellData?.suppliers || [];
+  const selected = cellData?.selected ?? null;
+
+  const addSupplier = () =>
+    onUpdate({ ...cellData, suppliers: [...suppliers, { id: newId(), name: "", cost: "", leadTime: "", quality: "", moq: "", notes: "" }] });
+  const removeSupplier = (id) =>
+    onUpdate({ ...cellData, suppliers: suppliers.filter(s => s.id !== id), selected: selected === id ? null : selected });
+  const changeSupplier = (id, key, val) =>
+    onUpdate({ ...cellData, suppliers: suppliers.map(s => s.id === id ? { ...s, [key]: val } : s) });
+  const selectSupplier = (id) =>
+    onUpdate({ ...cellData, selected: selected === id ? null : id });
+
+  const scores = Object.fromEntries(suppliers.map(s => [s.id, scoreSupplier(s, suppliers)]));
+  const maxScore = Math.max(...Object.values(scores), 0);
+  const winnerId = suppliers.find(s => scores[s.id] === maxScore && maxScore > 0 && suppliers.length > 1)?.id;
+
+  const { onDragStart, onDragOver, onDragEnd } = useDragSort(suppliers, next => onUpdate({ ...cellData, suppliers: next }));
+  const fields = [
+    { key: "cost", label: "単価", unit: "円" },
+    { key: "leadTime", label: "リードタイム", unit: "日" },
+    { key: "quality", label: "品質スコア", unit: "/100" },
+    { key: "moq", label: "MOQ", unit: "個" },
+  ];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 16, width: "min(96vw,920px)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 22px", borderBottom: "1px solid #1e293b" }}>
+          <div>
+            <div style={{ fontSize: 10, color: "#64748b" }}>{partName}</div>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#f1f5f9" }}>{processName}</h2>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={addSupplier} style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 8, color: "#fff", padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>＋ 候補を追加</button>
+            <button onClick={onClose} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
+          </div>
+        </div>
+        <div style={{ overflowY: "auto", padding: 20, flex: 1 }}>
+          {suppliers.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "48px 20px", color: "#334155", border: "2px dashed #1e293b", borderRadius: 12 }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🏭</div>
+              <p style={{ margin: 0, fontSize: 12 }}>「＋ 候補を追加」でサプライヤーを登録して比較を始めましょう</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
+              {suppliers.map((s, i) => {
+                const score = scores[s.id];
+                const isWinner = s.id === winnerId;
+                const isSelected = selected === s.id;
+                return (
+                  <div key={s.id} draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDragEnd={onDragEnd}
+                    style={{ minWidth: 200, background: isWinner ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : "#0a1628", border: `1px solid ${isSelected ? "#0ea5e9" : isWinner ? "#22c55e" : "#1e293b"}`, borderRadius: 10, padding: 14, position: "relative", cursor: "grab", flexShrink: 0 }}>
+                    {isWinner && <div style={{ position: "absolute", top: -9, left: 10, background: "#22c55e", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>推奨</div>}
+                    <div style={{ display: "flex", alignItems: "center", marginBottom: 10, gap: 6 }}>
+                      <span style={{ color: "#334155", fontSize: 13 }}>⠿</span>
+                      <input value={s.name} onChange={e => changeSupplier(s.id, "name", e.target.value)} placeholder={`サプライヤー ${i + 1}`}
+                        style={{ flex: 1, background: "transparent", border: "none", borderBottom: "1px solid #334155", color: "#f1f5f9", fontSize: 13, fontWeight: 700, padding: "2px 0", outline: "none" }} />
+                      <button onClick={() => showConfirm(`「${s.name || "このサプライヤー"}」を削除しますか？`, () => removeSupplier(s.id))} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
+                    </div>
+                    {fields.map(f => (
+                      <div key={f.key} style={{ marginBottom: 7 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                          <label style={{ fontSize: 10, color: "#64748b" }}>{f.label}</label>
+                          <span style={{ fontSize: 10, color: "#475569" }}>{f.unit}</span>
+                        </div>
+                        <input type="number" value={s[f.key]} onChange={e => changeSupplier(s.id, f.key, e.target.value)} placeholder="—"
+                          style={{ width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "5px 8px", fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    ))}
+                    <textarea value={s.notes} onChange={e => changeSupplier(s.id, "notes", e.target.value)} rows={2} placeholder="メモ"
+                      style={{ width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", padding: "5px 8px", fontSize: 10, outline: "none", resize: "none", boxSizing: "border-box", marginBottom: 8 }} />
+                    <ScoreBar value={score} />
+                    <button onClick={() => selectSupplier(s.id)}
+                      style={{ width: "100%", marginTop: 8, background: isSelected ? "linear-gradient(135deg,#0ea5e9,#6366f1)" : "#1e293b", border: `1px solid ${isSelected ? "transparent" : "#334155"}`, borderRadius: 6, color: isSelected ? "#fff" : "#94a3b8", padding: "6px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      {isSelected ? "✓ 採用中" : "採用する"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── マトリクスセル ───────────────────────────────────────────────────
+function MatrixCell({ cellData, onClick }) {
+  const suppliers = cellData?.suppliers || [];
+  const selected = cellData?.selected ?? null;
+  const sel = suppliers.find(s => s.id === selected);
+  const hasData = suppliers.length > 0;
+  return (
+    <div onClick={onClick} style={{ background: sel ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : hasData ? "#0f172a" : "#080f1a", border: `1px solid ${sel ? "#22c55e" : hasData ? "#1e293b" : "#0f172a"}`, borderRadius: 8, padding: "9px 11px", cursor: "pointer", minHeight: 64, transition: "all 0.15s", position: "relative", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      {sel ? (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#f1f5f9", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.name || "未入力"}</div>
+          <div style={{ display: "flex", gap: 5 }}>
+            {sel.cost && <span style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(sel.cost).toLocaleString()}</span>}
+            {sel.leadTime && <span style={{ fontSize: 10, color: "#64748b" }}>{sel.leadTime}日</span>}
+          </div>
+          {suppliers.length > 1 && <div style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>{suppliers.length}社比較中</div>}
+          <div style={{ position: "absolute", top: 6, right: 7, width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+        </>
+      ) : hasData ? (
+        <>
+          <div style={{ fontSize: 10, color: "#475569" }}>{suppliers.length}社 検討中</div>
+          <div style={{ fontSize: 9, color: "#334155" }}>クリックして選択</div>
+          <div style={{ position: "absolute", top: 6, right: 7, width: 6, height: 6, borderRadius: "50%", background: "#f59e0b" }} />
+        </>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#1e293b", fontSize: 16 }}>＋</div>
+      )}
+    </div>
+  );
+}
+
+// ─── フロービュー（テーブル形式・部品行＋工程列） ─────────────────────
+// 1部品分のサプライヤーカラムを描画するサブコンポーネント
+function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, setTargetCostMap }) {
+  const NODE_W = 180, NODE_H = 78, NODE_GAP = 8, COL_GAP = 44;
+  const [tooltip, setTooltip] = useState(null);
+
+  const cols = processes.map((proc, ci) => {
+    const cell = getCell(part.id, ci);
+    return { proc, ci, suppliers: cell?.suppliers || [], selected: cell?.selected ?? null };
+  });
+
+  const maxRows = Math.max(...cols.map(c => c.suppliers.length), 1);
+  const rowH = maxRows * (NODE_H + NODE_GAP);
+
+  // SVGサイズ（部品ラベル列を除いた工程部分のみ）
+  const svgW = cols.length * NODE_W + (cols.length - 1) * COL_GAP;
+  const svgH = rowH;
+  const nx = (ci) => ci * (NODE_W + COL_GAP) + NODE_W / 2;
+  const ny = (si) => si * (NODE_H + NODE_GAP) + NODE_H / 2;
+
+  const toggleSelect = (ci, sid) => {
+    const cell = getCell(part.id, ci);
+    setCell(part.id, ci, { ...cell, selected: cell.selected === sid ? null : sid });
+  };
+
+  // 接続線
+  const lines = [];
+  for (let ci = 0; ci < cols.length - 1; ci++) {
+    const from = cols[ci], to = cols[ci + 1];
+    from.suppliers.forEach((fs, fsi) => {
+      to.suppliers.forEach((ts, tsi) => {
+        const adopted = from.selected === fs.id && to.selected === ts.id;
+        const semi = from.selected === fs.id || to.selected === ts.id;
+        lines.push({ key: `${ci}-${fsi}-${tsi}`, x1: nx(ci) + NODE_W / 2, y1: ny(fsi), x2: nx(ci + 1) - NODE_W / 2, y2: ny(tsi), adopted, semi });
+      });
+    });
+  }
+
+  // 採用コスト合計
+  const adoptedCost = cols.reduce((sum, col) => {
+    const sel = col.suppliers.find(s => s.id === col.selected);
+    return sel?.cost ? sum + parseFloat(sel.cost) : sum;
+  }, 0);
+  const targetCost = targetCostMap[part.id] || "";
+  const overBudget = targetCost && adoptedCost > parseFloat(targetCost);
+
+  return (
+    <tr style={{ borderBottom: "1px solid #1e293b" }}>
+      {/* 部品ラベル列 */}
+      <td style={{ padding: "8px 10px 8px 0", verticalAlign: "top", minWidth: 130, maxWidth: 150 }}>
+        <div style={{ background: "#0f172a", border: `1px solid ${cat?.color || "#1e293b"}44`, borderRadius: 10, padding: "10px 12px", height: "100%", boxSizing: "border-box" }}>
+          {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 4, letterSpacing: "0.04em" }}>{cat.name}</div>}
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", marginBottom: 8 }}>{part.name}</div>
+          <div style={{ fontSize: 9, color: "#475569", marginBottom: 3 }}>目標コスト</div>
+          <input
+            type="number"
+            value={targetCost}
+            onChange={e => setTargetCostMap(prev => ({ ...prev, [part.id]: e.target.value }))}
+            placeholder="—"
+            style={{ width: "100%", background: "#1e293b", border: `1px solid ${overBudget ? "#ef4444" : "#334155"}`, borderRadius: 6, color: "#e2e8f0", padding: "4px 6px", fontSize: 11, outline: "none", boxSizing: "border-box" }}
+          />
+          {adoptedCost > 0 && (
+            <div style={{ marginTop: 6, fontSize: 10, fontWeight: 700, color: overBudget ? "#ef4444" : "#22c55e" }}>
+              採用計 ¥{adoptedCost.toLocaleString()}
+              {overBudget && <span style={{ display: "block", fontSize: 9, color: "#ef4444" }}>▲ 目標超過</span>}
+            </div>
+          )}
+        </div>
+      </td>
+
+      {/* 工程カラム群（SVG線 + HTML カード） */}
+      <td style={{ padding: "8px 0", verticalAlign: "top" }}>
+        <div style={{ position: "relative", overflowX: "auto" }}>
+          {/* SVG 接続線レイヤー */}
+          <svg width={svgW} height={svgH} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 0 }}>
+            <defs>
+              {[["fg-gray","#1e3a5f"],["fg-semi","#3b6fa0"],["fg-green","#22c55e"]].map(([id,fill]) => (
+                <marker key={id} id={id + part.id} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <path d="M0,0 L6,3 L0,6 Z" fill={fill} />
+                </marker>
+              ))}
+            </defs>
+            {lines.filter(l => !l.adopted && !l.semi).map(l => (
+              <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#1e3a5f" strokeWidth={1} strokeDasharray="4 3" markerEnd={`url(#fg-gray${part.id})`} opacity={0.4} />
+            ))}
+            {lines.filter(l => !l.adopted && l.semi).map(l => (
+              <line key={l.key+"s"} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#3b6fa0" strokeWidth={1.5} strokeDasharray="5 3" markerEnd={`url(#fg-semi${part.id})`} opacity={0.6} />
+            ))}
+            {lines.filter(l => l.adopted).map(l => (
+              <g key={l.key+"a"}>
+                <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#22c55e" strokeWidth={6} opacity={0.12} />
+                <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#22c55e" strokeWidth={2.5} markerEnd={`url(#fg-green${part.id})`} />
+                <circle cx={(l.x1+l.x2)/2} cy={(l.y1+l.y2)/2} r={4} fill="#22c55e" />
+              </g>
+            ))}
+          </svg>
+
+          {/* HTMLカード */}
+          <div style={{ position: "relative", zIndex: 1, width: svgW, minHeight: svgH, display: "flex", gap: COL_GAP }}>
+            {cols.map((col, ci) => {
+              const scores = Object.fromEntries(col.suppliers.map(s => [s.id, scoreSupplier(s, col.suppliers)]));
+              const maxS = Math.max(...Object.values(scores), 0);
+              const winnerId = col.suppliers.find(s => scores[s.id] === maxS && maxS > 0 && col.suppliers.length > 1)?.id;
+              return (
+                <div key={ci} style={{ width: NODE_W, flexShrink: 0 }}>
+                  {col.suppliers.map((s, si) => {
+                    const isSel = col.selected === s.id;
+                    const isWin = s.id === winnerId;
+                    const score = scores[s.id];
+                    const sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
+                    return (
+                      <div key={s.id}
+                        onClick={() => toggleSelect(ci, s.id)}
+                        onMouseEnter={e => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const cr = e.currentTarget.closest(".flow-container").getBoundingClientRect();
+                          setTooltip({ s, score, x: rect.right - cr.left + 8, y: rect.top - cr.top });
+                        }}
+                        onMouseLeave={() => setTooltip(null)}
+                        style={{ marginBottom: NODE_GAP, height: NODE_H, background: isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)" : isWin ? "linear-gradient(135deg,#0f172a,#0f2a1a)" : "#0a1220", border: `${isSel ? 2 : 1}px solid ${isSel ? "#0ea5e9" : isWin ? "#22c55e" : "#1e293b"}`, borderRadius: 9, padding: "9px 11px", cursor: "pointer", boxSizing: "border-box", position: "relative", userSelect: "none" }}>
+                        {isWin && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>推奨</div>}
+                        {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
+                        <div style={{ position: "absolute", top: 7, right: 7, width: 6, height: 6, borderRadius: "50%", background: sc }} />
+                        <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? "#f1f5f9" : "#94a3b8", marginBottom: 4, paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {s.name || `S${si + 1}`}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {s.cost && <span style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(s.cost).toLocaleString()}</span>}
+                          {s.leadTime && <span style={{ fontSize: 10, color: "#64748b" }}>LT:{s.leadTime}日</span>}
+                        </div>
+                        <div style={{ marginTop: 6, height: 3, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ width: `${score}%`, height: "100%", background: sc, borderRadius: 2 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {col.suppliers.length === 0 && (
+                    <div style={{ height: NODE_H, border: "1px dashed #1e293b", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", color: "#1e293b", fontSize: 11 }}>未登録</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {tooltip && (
+            <div style={{ position: "absolute", left: Math.min(tooltip.x, svgW - 200), top: tooltip.y, zIndex: 50, background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: "11px 13px", width: 190, pointerEvents: "none", boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", marginBottom: 7 }}>{tooltip.s.name || "未入力"}</div>
+              {[["単価", tooltip.s.cost ? `¥${parseFloat(tooltip.s.cost).toLocaleString()}` : "—", "#0ea5e9"],
+                ["リードタイム", tooltip.s.leadTime ? `${tooltip.s.leadTime}日` : "—", "#94a3b8"],
+                ["品質スコア", tooltip.s.quality ? `${tooltip.s.quality}/100` : "—", "#94a3b8"],
+                ["MOQ", tooltip.s.moq ? `${tooltip.s.moq}個` : "—", "#94a3b8"]].map(([l,v,c]) => (
+                <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                  <span style={{ fontSize: 10, color: "#475569" }}>{l}</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: c }}>{v}</span>
+                </div>
+              ))}
+              {tooltip.s.notes && <div style={{ marginTop: 7, fontSize: 10, color: "#64748b", borderTop: "1px solid #1e293b", paddingTop: 7 }}>{tooltip.s.notes}</div>}
+              <div style={{ marginTop: 7, textAlign: "center", fontSize: 9, color: "#334155" }}>クリックで採用 / 解除</div>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// 全体フロー表（工程ヘッダー行 + 部品行リスト）
+function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap }) {
+  const displayParts = partIds === "__all__"
+    ? parts
+    : parts.filter(p => partIds.includes(p.id));
+
+  if (displayParts.length === 0) return (
+    <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155", border: "2px dashed #1e293b", borderRadius: 12 }}>
+      <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+      <p style={{ margin: 0, fontSize: 12 }}>マトリクスビューで部品・サプライヤーを登録すると表示されます</p>
+    </div>
+  );
+
+  const NODE_W = 180, COL_GAP = 44;
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+        <thead>
+          <tr>
+            {/* 部品ラベルヘッダー */}
+            <th style={{ minWidth: 130, maxWidth: 150, padding: "0 10px 10px 0", verticalAlign: "bottom" }}>
+              <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "7px 10px", textAlign: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>部品</span>
+              </div>
+            </th>
+            {/* 工程ヘッダー（→ 付き） */}
+            <th style={{ padding: "0 0 10px 0", verticalAlign: "bottom" }}>
+              <div style={{ display: "flex", gap: COL_GAP }}>
+                {processes.map((proc, ci) => (
+                  <div key={ci} style={{ width: NODE_W, flexShrink: 0, display: "flex", alignItems: "center", gap: 0 }}>
+                    <div style={{ flex: 1, background: "#1e293b", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{proc}</span>
+                    </div>
+                    {ci < processes.length - 1 && (
+                      <div style={{ width: COL_GAP, textAlign: "center", color: "#334155", fontSize: 16, flexShrink: 0 }}>→</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {displayParts.map(part => (
+            <FlowPartRow
+              key={part.id}
+              part={part}
+              cat={categories.find(c => c.id === part.categoryId)}
+              processes={processes}
+              getCell={getCell}
+              setCell={setCell}
+              targetCostMap={targetCostMap}
+              setTargetCostMap={setTargetCostMap}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── テーマデータ構造ヘルパー ─────────────────────────────────────────
+const THEMES_KEY = "shoury_themes_v1";
+const ACTIVE_KEY = "shoury_active_v1";
+
+function makeBlankThemeData(name = "新規開発テーマ") {
+  const tid = newId();
+  return {
+    theme: { id: tid, name },
+    categories: [],
+    parts: [],
+    processes: [
+      { id: newId(), name: "材料調達" },
+      { id: newId(), name: "部品加工" },
+      { id: newId(), name: "組立" },
+      { id: newId(), name: "検査・品質" },
+      { id: newId(), name: "物流・納品" },
+    ],
+    matrix: {},
+  };
+}
+
+function loadThemes() {
+  try {
+    const raw = localStorage.getItem(THEMES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // First launch — seed with sample data
+  const sample = {
+    theme: SAMPLE_THEME,
+    categories: SAMPLE_CATEGORIES,
+    parts: SAMPLE_PARTS,
+    processes: SAMPLE_PROCESSES,
+    matrix: SAMPLE_MATRIX,
+  };
+  const list = [sample];
+  localStorage.setItem(THEMES_KEY, JSON.stringify(list));
+  return list;
+}
+
+function saveThemes(list) {
+  localStorage.setItem(THEMES_KEY, JSON.stringify(list));
+}
+
+function loadActiveId(themes) {
+  const saved = localStorage.getItem(ACTIVE_KEY);
+  if (saved && themes.find(t => t.theme.id === saved)) return saved;
+  return themes[0]?.theme.id ?? null;
+}
+
+// ─── メインアプリ ─────────────────────────────────────────────────────
+function App() {
+  const [themes, setThemesRaw] = useState(() => loadThemes());
+  const [activeThemeId, setActiveThemeIdRaw] = useState(() => loadActiveId(loadThemes()));
+  const [modal, setModal] = useState(null);
+  const [view, setView] = useState("matrix");
+  const [flowPartId, setFlowPartId] = useState(null);
+  const [filterCatId, setFilterCatId] = useState(null);
+  const [newPartName, setNewPartName] = useState("");
+  const [newPartCatId, setNewPartCatId] = useState("");
+  const [newProcName, setNewProcName] = useState("");
+  const [archive, setArchive] = useState(() => loadArchive());
+  const [importError, setImportError] = useState("");
+  const importFileRef = useRef(null);
+  const [confirmModal, setConfirmModal] = useState(null);
+  const [targetCostMap, setTargetCostMap] = useState({}); // { message, onOk }
+
+  const showConfirm = (message, onOk) => setConfirmModal({ message, onOk });
+
+  // ── アクティブテーマデータの読み書き ──
+  const activeData = themes.find(t => t.theme.id === activeThemeId) || themes[0] || makeBlankThemeData();
+  const theme = activeData.theme;
+  const categories = activeData.categories || [];
+  const parts = activeData.parts || [];
+  const processes = activeData.processes || SAMPLE_PROCESSES;
+  const matrix = activeData.matrix || {};
+
+  const updateActiveData = (patch) => {
+    const next = themes.map(t =>
+      t.theme.id === activeThemeId ? { ...t, ...patch } : t
+    );
+    setThemesRaw(next);
+    saveThemes(next);
+  };
+
+  const setTheme = (val) => updateActiveData({ theme: val });
+  const setCategories = (val) => updateActiveData({ categories: val });
+  const setParts = (val) => updateActiveData({ parts: val });
+  const setProcesses = (val) => updateActiveData({ processes: val });
+
+  const setActiveThemeId = (id) => {
+    setActiveThemeIdRaw(id);
+    localStorage.setItem(ACTIVE_KEY, id);
+    setFlowPartId(null);
+    setFilterCatId(null);
+    setView("matrix");
+  };
+
+  // ── テーマ追加・削除 ──
+  const addTheme = () => {
+    const blank = makeBlankThemeData();
+    const next = [...themes, blank];
+    setThemesRaw(next);
+    saveThemes(next);
+    setActiveThemeId(blank.theme.id);
+    setView("theme");
+  };
+
+  const deleteTheme = (id) => {
+    if (themes.length <= 1) { showConfirm("最後のテーマは削除できません", () => {}); return; }
+    showConfirm("このテーマを削除しますか？", () => {
+      const next = themes.filter(t => t.theme.id !== id);
+      setThemesRaw(next);
+      saveThemes(next);
+      if (activeThemeId === id) setActiveThemeId(next[0].theme.id);
+    });
+  };
+
+  const getCell = useCallback((partId, ci) => matrix[`${partId}_${ci}`] || { suppliers: [], selected: null }, [matrix]);
+  const setCell = (partId, ci, data) => {
+    const next = themes.map(t =>
+      t.theme.id === activeThemeId
+        ? { ...t, matrix: { ...t.matrix, [`${partId}_${ci}`]: data } }
+        : t
+    );
+    setThemesRaw(next);
+    saveThemes(next);
+  };
+
+  const handleExportBackup = () => {
+    exportBackup(theme, categories, parts, processes, matrix, archive);
+  };
+
+  const handleImportBackup = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImportError("");
+    importBackup(file, (data) => {
+      const c = data.current;
+      const restored = [{ theme: c.theme, categories: c.categories, parts: c.parts, processes: c.processes, matrix: c.matrix }];
+      setThemesRaw(restored);
+      saveThemes(restored);
+      setActiveThemeId(c.theme.id);
+      if (data.archive) {
+        localStorage.setItem(ARCHIVE_KEY, JSON.stringify(data.archive));
+        setArchive(data.archive);
+      }
+      setView("matrix");
+    }, (err) => setImportError(err));
+    e.target.value = "";
+  };
+
+  // 完了してアーカイブへ
+  const completeAndArchive = () => { showConfirm(`「${theme.name}」をアーカイブに保存して新規テーマを開始しますか？`, _doComplete); };
+  const _doComplete = () => {
+    const completedCellsNow = parts.reduce((cnt, part) =>
+      cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
+    const totalCellsNow = parts.length * processes.length;
+    const totalCostNow = parts.reduce((sum, part) =>
+      sum + processes.reduce((s2, _, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers?.find(s => s.id === cell.selected);
+        return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+      }, 0), 0);
+    const snapshot = {
+      id: newId(),
+      archivedAt: new Date().toISOString(),
+      theme, categories, parts, processes, matrix,
+      completedCells: completedCellsNow, totalCells: totalCellsNow, totalCost: totalCostNow,
+    };
+    saveToArchive(snapshot);
+    setArchive(loadArchive());
+    // このテーマをリセット（削除ではなくクリア）
+    updateActiveData({ ...makeBlankThemeData(theme.name + " (完了済)"), theme: { ...theme, name: theme.name + " (完了済)" } });
+    setView("archive");
+  };
+
+  const deleteArchiveItem = (id) => {
+    deleteFromArchive(id);
+    setArchive(loadArchive());
+  };
+
+  const restoreArchiveItem = (snap) => {
+    showConfirm("現在の作業を破棄してこのアーカイブを復元しますか？", () => {
+      updateActiveData({ theme: snap.theme, categories: snap.categories, parts: snap.parts, processes: snap.processes, matrix: snap.matrix });
+      setView("matrix");
+    });
+  };
+
+  // アーカイブから新規テーマとして再編集
+  const editFromArchive = (snap) => {
+    const newTheme = { ...snap.theme, id: newId(), name: snap.theme.name + " (再編集)" };
+    const newEntry = {
+      theme: newTheme,
+      categories: snap.categories,
+      parts: snap.parts,
+      processes: snap.processes,
+      matrix: snap.matrix,
+    };
+    const next = [...themes, newEntry];
+    setThemesRaw(next);
+    saveThemes(next);
+    setActiveThemeId(newTheme.id);
+    setView("matrix");
+  };
+
+  // PDF出力ラッパー — 全部品モードは部品ごとに別ウィンドウで連続出力
+  const handleExportPdf = () => {
+    const targetParts = (!flowPartId || flowPartId === "__all__") ? parts : [currentFlowPart].filter(Boolean);
+    if (!targetParts.length) return;
+    targetParts.forEach(part => {
+      const cols = processes.map((proc, ci) => {
+        const cell = getCell(part.id, ci);
+        return { proc: proc.name, ci, suppliers: cell?.suppliers || [], selected: cell?.selected ?? null };
+      });
+      exportFlowPDF(part.name, processes.map(p => p.name), cols);
+    });
+  };
+
+  const partDrag = useDragSort(parts, setParts);
+  const procDrag = useDragSort(processes, setProcesses);
+
+  const addPart = () => {
+    const name = newPartName.trim();
+    const catId = newPartCatId || categories[0]?.id;
+    if (!name || !catId) return;
+    setParts([...parts, { id: newId(), categoryId: catId, name }]);
+    setNewPartName("");
+  };
+  const removePart = (id) => setParts(parts.filter(p => p.id !== id));
+
+  const addProcess = () => {
+    const name = newProcName.trim() || `工程${processes.length + 1}`;
+    setProcesses([...processes, { id: newId(), name }]);
+    setNewProcName("");
+  };
+  const removeProcess = (id) => setProcesses(processes.filter(p => p.id !== id));
+
+  // 集計
+  const totalCost = parts.reduce((sum, part) =>
+    sum + processes.reduce((s2, _, ci) => {
+      const cell = getCell(part.id, ci);
+      const sel = cell.suppliers?.find(s => s.id === cell.selected);
+      return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+    }, 0), 0);
+  const completedCells = parts.reduce((cnt, part) =>
+    cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
+  const totalCells = parts.length * processes.length;
+
+  const displayParts = filterCatId ? parts.filter(p => p.categoryId === filterCatId) : parts;
+  const currentFlowPart = parts.find(p => p.id === flowPartId) || parts[0];
+  const getCatById = (id) => categories.find(c => c.id === id);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#020817", color: "#e2e8f0", fontFamily: "'Inter','Noto Sans JP',sans-serif" }}>
+      {/* ── ヘッダー ── */}
+      <div style={{ borderBottom: "1px solid #1e293b", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "rgba(2,8,23,0.97)", backdropFilter: "blur(8px)", zIndex: 100, gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <div style={{ width: 24, height: 24, background: "linear-gradient(135deg,#6366f1,#0ea5e9)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}>⛓</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 9, color: "#475569", letterSpacing: "0.08em" }}>作業中テーマ</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{theme.name}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+          {[["themes","📋 テーマ一覧"], ["theme","⚙ 設定"], ["matrix","マトリクス"], ["flow","フロー図"], ["summary","サマリー"], ["archive","📁 アーカイブ"]].map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)}
+              style={{ background: view === v ? "linear-gradient(135deg,#6366f1,#0ea5e9)" : "#1e293b", border: "none", borderRadius: 7, color: view === v ? "#fff" : "#64748b", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {label}
+            </button>
+          ))}
+          <div style={{ width: 1, height: 24, background: "#1e293b", margin: "0 4px" }} />
+          {/* Export buttons */}
+          <button onClick={() => exportExcel(theme, categories, parts, processes, getCell)}
+            style={{ background: "#14532d", border: "1px solid #22c55e33", borderRadius: 7, color: "#22c55e", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            📊 Excel
+          </button>
+          {view === "flow" && (
+            <button onClick={handleExportPdf}
+              style={{ background: "#450a0a", border: "1px solid #ef444433", borderRadius: 7, color: "#ef4444", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              📄 PDF{(!flowPartId || flowPartId === "__all__") ? `（全${parts.length}部品）` : ""}
+            </button>
+          )}
+          <button onClick={() => completeAndArchive()}
+            style={{ background: "#1c1c3a", border: "1px solid #6366f133", borderRadius: 7, color: "#a5b4fc", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            ✅ 完了
+          </button>
+          <div style={{ marginLeft: 4, textAlign: "right", borderLeft: "1px solid #1e293b", paddingLeft: 10 }}>
+            <div style={{ fontSize: 9, color: "#475569" }}>確定 / 全セル</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>{completedCells} / {totalCells}</div>
+          </div>
+          {totalCost > 0 && (
+            <div style={{ borderLeft: "1px solid #1e293b", paddingLeft: 10, textAlign: "right" }}>
+              <div style={{ fontSize: 9, color: "#475569" }}>累計コスト</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0ea5e9" }}>¥{totalCost.toLocaleString()}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ padding: "24px 22px 48px" }}>
+
+        {/* ── テーマ一覧 ── */}
+        {view === "themes" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <h2 style={{ color: "#f1f5f9", fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>📋 開発テーマ一覧</h2>
+                <p style={{ color: "#475569", fontSize: 12, margin: 0 }}>テーマを選んで作業を切り替えます。新しいテーマを追加することもできます。</p>
+              </div>
+              <button onClick={addTheme}
+                style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 10, color: "#fff", padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                ＋ テーマを追加
+              </button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+              {themes.map(t => {
+                const tParts = t.parts || [];
+                const tProcs = t.processes || [];
+                const tCats = t.categories || [];
+                const tMatrix = t.matrix || {};
+                const tCompleted = tParts.reduce((cnt, part) =>
+                  cnt + tProcs.filter((_, ci) => (tMatrix[`${part.id}_${ci}`]?.selected != null)).length, 0);
+                const tTotal = tParts.length * tProcs.length;
+                const tCost = tParts.reduce((sum, part) =>
+                  sum + tProcs.reduce((s2, _, ci) => {
+                    const cell = tMatrix[`${part.id}_${ci}`];
+                    const sel = cell?.suppliers?.find(s => s.id === cell?.selected);
+                    return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+                  }, 0), 0);
+                const isActive = t.theme.id === activeThemeId;
+                const prog = tTotal > 0 ? Math.round(tCompleted / tTotal * 100) : 0;
+                return (
+                  <div key={t.theme.id}
+                    onClick={() => { setActiveThemeId(t.theme.id); setView("matrix"); }}
+                    style={{ background: isActive ? "linear-gradient(135deg,#0c1a3a,#0a2a1a)" : "#0f172a", border: `2px solid ${isActive ? "#6366f1" : "#1e293b"}`, borderRadius: 14, padding: "18px 20px", cursor: "pointer", transition: "border-color 0.2s", position: "relative" }}>
+                    {isActive && (
+                      <div style={{ position: "absolute", top: -10, left: 14, background: "linear-gradient(135deg,#6366f1,#0ea5e9)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "2px 10px", borderRadius: 20 }}>作業中</div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#f1f5f9", flex: 1, marginRight: 8 }}>{t.theme.name}</div>
+                      {themes.length > 1 && (
+                        <button onClick={e => { e.stopPropagation(); deleteTheme(t.theme.id); }}
+                          style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#475569", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>×</button>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, color: "#64748b" }}>📦 {tParts.length}部品</span>
+                      <span style={{ fontSize: 11, color: "#64748b" }}>🗂 {tCats.length}大分類</span>
+                      {tCost > 0 && <span style={{ fontSize: 11, color: "#0ea5e9", fontWeight: 600 }}>¥{tCost.toLocaleString()}</span>}
+                    </div>
+                    {/* 大分類チップ */}
+                    {tCats.length > 0 && (
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
+                        {tCats.map(cat => (
+                          <span key={cat.id} style={{ fontSize: 10, background: (cat.color || "#6366f1") + "22", color: cat.color || "#6366f1", border: `1px solid ${(cat.color || "#6366f1")}44`, borderRadius: 20, padding: "1px 8px" }}>{cat.name}</span>
+                        ))}
+                      </div>
+                    )}
+                    {/* 進捗バー */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ width: `${prog}%`, height: "100%", background: prog === 100 ? "#22c55e" : "#6366f1", borderRadius: 2, transition: "width 0.4s" }} />
+                      </div>
+                      <span style={{ fontSize: 10, color: prog === 100 ? "#22c55e" : "#475569", minWidth: 40 }}>{tCompleted}/{tTotal}</span>
+                    </div>
+                    <div style={{ marginTop: 12, fontSize: 11, color: isActive ? "#6366f1" : "#334155", fontWeight: isActive ? 600 : 400 }}>
+                      {isActive ? "← 現在作業中" : "クリックして切り替え →"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── テーマ設定 ── */}
+        {view === "theme" && (
+          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} />
+        )}
+
+        {/* ── マトリクス ── */}
+        {view === "matrix" && (
+          <div>
+            {/* ツールバー */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <select
+                  value={newPartCatId || categories[0]?.id || ""}
+                  onChange={e => setNewPartCatId(e.target.value)}
+                  style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}
+                >
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <input value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPart()} placeholder="部品名"
+                  style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 110 }} />
+                <button onClick={addPart} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 部品</button>
+              </div>
+              <div style={{ width: 1, height: 24, background: "#1e293b" }} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input value={newProcName} onChange={e => setNewProcName(e.target.value)} onKeyDown={e => e.key === "Enter" && addProcess()} placeholder="工程名"
+                  style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 110 }} />
+                <button onClick={addProcess} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 工程</button>
+              </div>
+            </div>
+
+            {/* 大分類フィルタ */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+              <button onClick={() => setFilterCatId(null)}
+                style={{ background: filterCatId === null ? "#1e293b" : "transparent", border: `1px solid ${filterCatId === null ? "#475569" : "#1e293b"}`, borderRadius: 20, color: filterCatId === null ? "#e2e8f0" : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>
+                すべて
+              </button>
+              {categories.map(cat => (
+                <button key={cat.id} onClick={() => setFilterCatId(filterCatId === cat.id ? null : cat.id)}
+                  style={{ background: filterCatId === cat.id ? cat.color + "22" : "transparent", border: `1px solid ${filterCatId === cat.id ? cat.color : "#1e293b"}`, borderRadius: 20, color: filterCatId === cat.id ? cat.color : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, display: "inline-block" }} />
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+
+            {/* テーブル */}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: 600 }}>
+                <thead>
+                  <tr>
+                    {/* 大分類列 */}
+                    <th style={{ width: 10, padding: 0 }} />
+                    <th style={{ width: 110, minWidth: 90 }} />
+                    {processes.map((proc, ci) => (
+                      <th key={proc.id} draggable onDragStart={() => procDrag.onDragStart(ci)} onDragOver={e => procDrag.onDragOver(e, ci)} onDragEnd={procDrag.onDragEnd}
+                        style={{ padding: "0 5px 8px", minWidth: 140, cursor: "grab" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "7px 10px" }}>
+                          <span style={{ color: "#334155", fontSize: 12, marginRight: 4, flexShrink: 0 }}>⠿</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", flex: 1, textAlign: "center" }}>{proc.name}</span>
+                          <button onClick={() => showConfirm(`「${proc.name}」を削除しますか？`, () => removeProcess(proc.id))} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* 大分類ごとにグループ化して表示 */}
+                  {categories.map(cat => {
+                    const catParts = displayParts.filter(p => p.categoryId === cat.id);
+                    if (catParts.length === 0) return null;
+                    return catParts.map((part, pi) => (
+                      <tr key={part.id} draggable onDragStart={() => partDrag.onDragStart(parts.indexOf(part))} onDragOver={e => partDrag.onDragOver(e, parts.indexOf(part))} onDragEnd={partDrag.onDragEnd}>
+                        {/* 大分類カラーバー（グループの先頭行のみラベル） */}
+                        <td style={{ padding: "0 0 7px 0", verticalAlign: "top" }}>
+                          <div style={{ width: 4, height: "100%", minHeight: 64, background: pi === 0 ? cat.color : cat.color + "44", borderRadius: 4, marginRight: 4 }} />
+                        </td>
+                        {/* 部品名 */}
+                        <td style={{ padding: "0 8px 7px 4px", verticalAlign: "top", cursor: "grab" }}>
+                          <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "8px 10px" }}>
+                            {pi === 0 && (
+                              <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 4, letterSpacing: "0.05em" }}>{cat.name}</div>
+                            )}
+                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ color: "#334155", fontSize: 13 }}>⠿</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", flex: 1 }}>{part.name}</span>
+                              <button onClick={() => showConfirm(`「${part.name}」を削除しますか？`, () => removePart(part.id))} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+                            </div>
+                          </div>
+                        </td>
+                        {processes.map((_, ci) => (
+                          <td key={ci} style={{ padding: "0 5px 7px" }}>
+                            <MatrixCell cellData={getCell(part.id, ci)} onClick={() => setModal({ partId: part.id, partName: part.name, processIdx: ci })} />
+                          </td>
+                        ))}
+                      </tr>
+                    ));
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 10, color: "#475569" }}>
+              {[{ color: "#22c55e", label: "採用確定" }, { color: "#f59e0b", label: "検討中" }, { color: "#1e293b", label: "未着手" }].map(l => (
+                <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: l.color }} />{l.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── フロービュー ── */}
+        {view === "flow" && (
+          <div>
+            {/* モード切り替え + 部品セレクタ */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+              {/* 全部品 / 1部品 トグル */}
+              <div style={{ display: "flex", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, overflow: "hidden" }}>
+                <button onClick={() => setFlowPartId("__all__")}
+                  style={{ background: (flowPartId === "__all__" || !flowPartId) ? "linear-gradient(135deg,#6366f1,#0ea5e9)" : "transparent", border: "none", color: (flowPartId === "__all__" || !flowPartId) ? "#fff" : "#64748b", padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                  全部品
+                </button>
+                <button onClick={() => setFlowPartId(currentFlowPart?.id || parts[0]?.id)}
+                  style={{ background: (flowPartId && flowPartId !== "__all__") ? "linear-gradient(135deg,#6366f1,#0ea5e9)" : "transparent", border: "none", color: (flowPartId && flowPartId !== "__all__") ? "#fff" : "#64748b", padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                  部品を選択
+                </button>
+              </div>
+
+              {/* 1部品モード時の部品セレクタ */}
+              {flowPartId && flowPartId !== "__all__" && (
+                <>
+                  {categories.map(cat => {
+                    const catParts = parts.filter(p => p.categoryId === cat.id);
+                    if (!catParts.length) return null;
+                    const activeCatId = getCatById(parts.find(p => p.id === flowPartId)?.categoryId)?.id;
+                    return (
+                      <div key={cat.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, display: "inline-block", flexShrink: 0 }} />
+                        {catParts.map(part => (
+                          <button key={part.id} onClick={() => setFlowPartId(part.id)}
+                            style={{ background: flowPartId === part.id ? cat.color + "33" : "#1e293b", border: `1px solid ${flowPartId === part.id ? cat.color : "#334155"}`, borderRadius: 7, color: flowPartId === part.id ? cat.color : "#64748b", padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                            {part.name}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+
+            <div style={{ fontSize: 10, color: "#334155", marginBottom: 10 }}>
+              破線：候補ルート　実線（緑）：採用ルート　ノードクリックで採用切替
+            </div>
+
+            {/* 全部品モード */}
+            {(!flowPartId || flowPartId === "__all__") && (
+              <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
+                <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
+              </div>
+            )}
+
+                        {/* 1部品モード */}
+            {flowPartId && flowPartId !== "__all__" && currentFlowPart && (
+              <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
+                <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── サマリー ── */}
+        {view === "summary" && (
+          <div>
+            <h2 style={{ color: "#f1f5f9", fontSize: 18, marginBottom: 4, fontWeight: 800 }}>{theme.name}</h2>
+            <p style={{ color: "#475569", fontSize: 12, marginBottom: 20 }}>商流サマリー — 大分類別採用状況</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
+              {[
+                { label: "累計コスト", value: totalCost ? `¥${totalCost.toLocaleString()}` : "—", color: "#0ea5e9" },
+                { label: "採用確定セル", value: `${completedCells} / ${totalCells}`, color: "#22c55e" },
+                { label: "大分類 / 部品数", value: `${categories.length}分類 / ${parts.length}部品`, color: "#a78bfa" },
+              ].map(k => (
+                <div key={k.label} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: "14px 18px" }}>
+                  <div style={{ fontSize: 10, color: "#64748b", marginBottom: 5 }}>{k.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 大分類ごとのテーブル */}
+            {categories.map(cat => {
+              const catParts = parts.filter(p => p.categoryId === cat.id);
+              if (catParts.length === 0) return null;
+              const catCost = catParts.reduce((s, part) =>
+                s + processes.reduce((s2, _, ci) => {
+                  const cell = getCell(part.id, ci);
+                  const sel = cell.suppliers?.find(s => s.id === cell.selected);
+                  return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+                }, 0), 0);
+              return (
+                <div key={cat.id} style={{ marginBottom: 24 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: cat.color }} />
+                    <span style={{ fontSize: 14, fontWeight: 700, color: cat.color }}>{cat.name}</span>
+                    {catCost > 0 && <span style={{ fontSize: 12, color: "#475569" }}>小計 ¥{catCost.toLocaleString()}</span>}
+                  </div>
+                  <div style={{ overflowX: "auto", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10, overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 500 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                          <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: "#475569", minWidth: 100 }}>部品</th>
+                          {processes.map(p => <th key={p.id} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: "#475569", minWidth: 110 }}>{p.name}</th>)}
+                          <th style={{ padding: "8px 12px", textAlign: "right", fontSize: 10, color: "#475569" }}>小計</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {catParts.map(part => {
+                          const partTotal = processes.reduce((s, _, ci) => {
+                            const cell = getCell(part.id, ci);
+                            const sel = cell.suppliers?.find(s => s.id === cell.selected);
+                            return sel?.cost ? s + parseFloat(sel.cost) : s;
+                          }, 0);
+                          return (
+                            <tr key={part.id} style={{ borderBottom: "1px solid #0f172a" }}>
+                              <td style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#94a3b8" }}>{part.name}</td>
+                              {processes.map((_, ci) => {
+                                const cell = getCell(part.id, ci);
+                                const s = cell.suppliers?.find(sup => sup.id === cell.selected);
+                                return (
+                                  <td key={ci} style={{ padding: "10px 12px" }}>
+                                    {s ? (
+                                      <div>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: "#f1f5f9" }}>{s.name || "未入力"}</div>
+                                        {s.cost && <div style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(s.cost).toLocaleString()}</div>}
+                                        {s.leadTime && <div style={{ fontSize: 9, color: "#64748b" }}>LT:{s.leadTime}日</div>}
+                                      </div>
+                                    ) : <span style={{ fontSize: 10, color: "#334155" }}>未選択</span>}
+                                  </td>
+                                );
+                              })}
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12, fontWeight: 700, color: partTotal ? "#0ea5e9" : "#334155" }}>
+                                {partTotal ? `¥${partTotal.toLocaleString()}` : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── アーカイブ ── */}
+        {view === "archive" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <h2 style={{ color: "#f1f5f9", fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>📁 アーカイブ</h2>
+                <p style={{ color: "#475569", fontSize: 12, margin: 0 }}>完了した開発テーマの記録。復元・Excel出力・削除ができます。</p>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: "#475569" }}>{archive.length} 件</span>
+                <div style={{ width: 1, height: 20, background: "#1e293b" }} />
+                {/* バックアップ */}
+                <button onClick={handleExportBackup}
+                  style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                  ⬇ バックアップ保存
+                </button>
+                <button onClick={() => importFileRef.current?.click()}
+                  style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                  ⬆ バックアップ復元
+                </button>
+                <input ref={importFileRef} type="file" accept=".json" onChange={handleImportBackup} style={{ display: "none" }} />
+              </div>
+            </div>
+            {importError && (
+              <div style={{ background: "#450a0a", border: "1px solid #ef4444", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#ef4444" }}>
+                ⚠ {importError}
+              </div>
+            )}
+            {archive.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155", border: "2px dashed #1e293b", borderRadius: 12 }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>📂</div>
+                <p style={{ margin: 0 }}>まだアーカイブはありません。<br/>ヘッダーの「✅ 完了」でテーマを保存すると表示されます。</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {archive.map(snap => {
+                  const d = new Date(snap.archivedAt);
+                  const dateStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+                  const prog = snap.totalCells > 0 ? Math.round(snap.completedCells / snap.totalCells * 100) : 0;
+                  return (
+                    <div key={snap.id} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: "18px 20px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: "#f1f5f9", marginBottom: 6 }}>{snap.theme?.name || "無題"}</div>
+                          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10 }}>
+                            <span style={{ fontSize: 11, color: "#475569" }}>🕐 {dateStr}</span>
+                            <span style={{ fontSize: 11, color: "#64748b" }}>📦 {(snap.parts||[]).length}部品 / {(snap.categories||[]).length}大分類</span>
+                            <span style={{ fontSize: 11, color: "#64748b" }}>⚙️ {(snap.processes||[]).length}工程</span>
+                            {snap.totalCost > 0 && <span style={{ fontSize: 11, color: "#0ea5e9", fontWeight: 600 }}>¥{snap.totalCost.toLocaleString()}</span>}
+                          </div>
+                          {/* Progress bar */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ flex: 1, height: 5, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
+                              <div style={{ width: `${prog}%`, height: "100%", background: prog === 100 ? "#22c55e" : "#0ea5e9", borderRadius: 3 }} />
+                            </div>
+                            <span style={{ fontSize: 10, color: prog === 100 ? "#22c55e" : "#64748b", minWidth: 50 }}>{snap.completedCells}/{snap.totalCells} 確定 ({prog}%)</span>
+                          </div>
+                          {/* Category chips */}
+                          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                            {(snap.categories||[]).map(cat => (
+                              <span key={cat.id} style={{ fontSize: 10, background: cat.color + "22", color: cat.color, border: `1px solid ${cat.color}44`, borderRadius: 20, padding: "2px 8px" }}>{cat.name}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => editFromArchive(snap)}
+                            style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 7, color: "#fff", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                            ✏ 再編集
+                          </button>
+                          <button onClick={() => restoreArchiveItem(snap)}
+                            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                            🔄 上書き復元
+                          </button>
+                          <button onClick={() => exportExcel(snap.theme, snap.categories, snap.parts, snap.processes, (partId, ci) => snap.matrix?.[`${partId}_${ci}`] || { suppliers: [], selected: null })}
+                            style={{ background: "#14532d", border: "1px solid #22c55e33", borderRadius: 7, color: "#22c55e", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                            📊 Excel
+                          </button>
+                          <button onClick={() => showConfirm(`「${snap.theme?.name}」を削除しますか？`, () => deleteArchiveItem(snap.id))}
+                            style={{ background: "none", border: "1px solid #334155", borderRadius: 7, color: "#475569", padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>
+                            🗑 削除
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+
+      {modal && (
+        <CellModal
+          partName={modal.partName}
+          processName={processes[modal.processIdx]?.name}
+          cellData={getCell(modal.partId, modal.processIdx)}
+          onUpdate={data => setCell(modal.partId, modal.processIdx, data)}
+          onClose={() => setModal(null)}
+        />
+      )}
+
+      {/* 確認モーダル（window.confirm の代替） */}
+      {confirmModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, backdropFilter: "blur(4px)", padding: 20 }}>
+          <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 16, padding: "28px 24px", maxWidth: 360, width: "100%", textAlign: "center" }}>
+            <div style={{ fontSize: 14, color: "#e2e8f0", marginBottom: 24, lineHeight: 1.6 }}>{confirmModal.message}</div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button onClick={() => { setConfirmModal(null); }}
+                style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "10px 24px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                キャンセル
+              </button>
+              <button onClick={() => { const fn = confirmModal.onOk; setConfirmModal(null); fn(); }}
+                style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 8, color: "#fff", padding: "10px 24px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>
