@@ -12,7 +12,9 @@
   <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #020817; }</style>
   <script>
     if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js')); }
-    window.onerror = function(msg, src, line) { document.getElementById('root').innerHTML = '<div style="color:red;padding:20px;font-family:monospace;background:#fff">Error: ' + msg + ' (line ' + line + ')</div>'; };
+    window.onerror = function(msg, src, line, col, err) {
+      document.getElementById('root').innerHTML = '<div style="color:red;padding:20px;font-family:monospace;background:#fff;white-space:pre">Error: ' + msg + '\nLine: ' + line + '\n' + (err ? err.stack : '') + '</div>';
+    };
   </script>
 </head>
 <body>
@@ -722,14 +724,19 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
           {/* 工程ごとの登録ボタン（SVG領域外なのでクリック確実） */}
           <div style={{ marginTop: 10, borderTop: "1px solid #1e293b", paddingTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ fontSize: 9, color: "#475569", marginBottom: 2 }}>工程を選択して登録</div>
-            {processes.map((proc, ci) => {
-              const cell = getCell(part.id, ci);
-              const hasSuppliers = (cell?.suppliers?.length || 0) > 0;
-              const hasSel = cell?.selected != null;
+            {processes.map(function(proc, ci) {
+              var cell = getCell(part.id, ci);
+              var hasSuppliers = (cell && cell.suppliers ? cell.suppliers.length : 0) > 0;
+              var hasSel = cell && cell.selected != null;
+              var bg = hasSel ? "#0a2a1a" : hasSuppliers ? "#0c2040" : "#1e293b";
+              var bc = hasSel ? "#22c55e" : hasSuppliers ? "#0ea5e9" : "#334155";
+              var fc = hasSel ? "#22c55e" : hasSuppliers ? "#0ea5e9" : "#64748b";
+              var label = (hasSel ? "✓ " : hasSuppliers ? "● " : "＋ ") + proc;
+              var idx = ci;
               return (
-                <button key={ci} onClick={() => onOpenModal(part.id, part.name, ci)}
-                  style={{ background: hasSel ? "#0a2a1a" : hasSuppliers ? "#0c2040" : "#1e293b", border: `1px solid ${hasSel ? "#22c55e" : hasSuppliers ? "#0ea5e9" : "#334155"}`, borderRadius: 6, color: hasSel ? "#22c55e" : hasSuppliers ? "#0ea5e9" : "#64748b", padding: "4px 8px", fontSize: 10, cursor: "pointer", textAlign: "left", width: "100%" }}>
-                  {hasSel ? "✓ " : hasSuppliers ? "● " : "＋ "}{proc}
+                <button key={idx} onClick={function() { onOpenModal(part.id, part.name, idx); }}
+                  style={{ background: bg, border: "1px solid " + bc, borderRadius: 6, color: fc, padding: "4px 8px", fontSize: 10, cursor: "pointer", textAlign: "left", width: "100%" }}>
+                  {label}
                 </button>
               );
             })}
@@ -1407,28 +1414,34 @@ function App() {
             <div style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 14px", marginBottom: 12, overflowX: "auto" }}>
               <div style={{ fontSize: 10, color: "#475569", marginBottom: 8 }}>工程の順番・削除</div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
-                {processes.map((proc, ci) => (
-                  <div key={proc.id} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 8px", display: "flex", alignItems: "center", gap: 4 }}>
-                      <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>{proc.name}</span>
-                      <button onClick={() => {
-                        if (ci === 0) return;
-                        const next = [...processes];
-                        [next[ci], next[ci-1]] = [next[ci-1], next[ci]];
-                        setProcesses(next);
-                      }} style={{ background: "none", border: "none", color: ci === 0 ? "#1e293b" : "#64748b", cursor: ci === 0 ? "default" : "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>←</button>
-                      <button onClick={() => {
-                        if (ci === processes.length - 1) return;
-                        const next = [...processes];
-                        [next[ci], next[ci+1]] = [next[ci+1], next[ci]];
-                        setProcesses(next);
-                      }} style={{ background: "none", border: "none", color: ci === processes.length-1 ? "#1e293b" : "#64748b", cursor: ci === processes.length-1 ? "default" : "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>→</button>
-                      <button onClick={() => showConfirm(`「${proc.name}」を削除しますか？`, () => removeProcess(proc.id))}
-                        style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>×</button>
+                {processes.map(function(proc, ci) {
+                  function moveLeft() {
+                    if (ci === 0) return;
+                    var next = processes.slice();
+                    var tmp = next[ci]; next[ci] = next[ci-1]; next[ci-1] = tmp;
+                    setProcesses(next);
+                  }
+                  function moveRight() {
+                    if (ci === processes.length - 1) return;
+                    var next = processes.slice();
+                    var tmp = next[ci]; next[ci] = next[ci+1]; next[ci+1] = tmp;
+                    setProcesses(next);
+                  }
+                  function delProc() {
+                    showConfirm("「" + proc.name + "」を削除しますか？", function() { removeProcess(proc.id); });
+                  }
+                  return (
+                    <div key={proc.id} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 8px", display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>{proc.name}</span>
+                        <button onClick={moveLeft} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: ci === 0 ? "#1e293b" : "#64748b", cursor: ci === 0 ? "default" : "pointer", fontSize: 12, padding: "1px 6px", lineHeight: 1 }}>←</button>
+                        <button onClick={moveRight} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: ci === processes.length-1 ? "#1e293b" : "#64748b", cursor: ci === processes.length-1 ? "default" : "pointer", fontSize: 12, padding: "1px 6px", lineHeight: 1 }}>→</button>
+                        <button onClick={delProc} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#475569", cursor: "pointer", fontSize: 12, padding: "1px 6px", lineHeight: 1 }}>×</button>
+                      </div>
+                      {ci < processes.length - 1 && <span style={{ color: "#334155", fontSize: 14 }}>›</span>}
                     </div>
-                    {ci < processes.length - 1 && <span style={{ color: "#334155", fontSize: 12 }}>→</span>}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
