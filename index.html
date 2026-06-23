@@ -434,7 +434,7 @@ function ScoreBar({ value }) {
 }
 
 // ─── テーマ/大分類設定パネル ──────────────────────────────────────────
-function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts }) {
+function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts, showConfirm }) {
   const [newCatName, setNewCatName] = useState("");
   const drag = useDragSort(categories, setCategories);
 
@@ -532,7 +532,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
 }
 
 // ─── セル詳細モーダル ─────────────────────────────────────────────────
-function CellModal({ partName, processName, cellData, onUpdate, onClose }) {
+function CellModal({ partName, processName, cellData, onUpdate, onClose, showConfirm }) {
   const suppliers = cellData?.suppliers || [];
   const selected = cellData?.selected ?? null;
 
@@ -1221,7 +1221,7 @@ function App() {
 
         {/* ── テーマ設定 ── */}
         {view === "theme" && (
-          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} />
+          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} showConfirm={showConfirm} />
         )}
 
         {/* ── マトリクス ── */}
@@ -1631,6 +1631,7 @@ function App() {
           cellData={getCell(modal.partId, modal.processIdx)}
           onUpdate={data => setCell(modal.partId, modal.processIdx, data)}
           onClose={() => setModal(null)}
+          showConfirm={showConfirm}
         />
       )}
 
