@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>商流シミュレーター</title>
   <meta name="theme-color" content="#6366f1" />
   <link rel="manifest" href="manifest.json" />
@@ -12,13 +11,8 @@
   <meta name="apple-mobile-web-app-title" content="商流" />
   <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #020817; }</style>
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
-    }
-    window.onerror = function(msg, src, line) {
-      document.getElementById('root').innerHTML =
-        '<div style="color:red;padding:20px;font-family:monospace;background:#fff">Error: ' + msg + ' (line ' + line + ')</div>';
-    };
+    if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js')); }
+    window.onerror = function(msg, src, line) { document.getElementById('root').innerHTML = '<div style="color:red;padding:20px;font-family:monospace;background:#fff">Error: ' + msg + ' (line ' + line + ')</div>'; };
   </script>
 </head>
 <body>
@@ -707,8 +701,8 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
   return (
     <tr style={{ borderBottom: "1px solid #1e293b" }}>
       {/* 部品ラベル列 */}
-      <td style={{ padding: "8px 10px 8px 0", verticalAlign: "top", minWidth: 130, maxWidth: 150 }}>
-        <div style={{ background: "#0f172a", border: `1px solid ${cat?.color || "#1e293b"}44`, borderRadius: 10, padding: "10px 12px", height: "100%", boxSizing: "border-box" }}>
+      <td style={{ padding: "8px 10px 8px 0", verticalAlign: "top", minWidth: 140, maxWidth: 160 }}>
+        <div style={{ background: "#0f172a", border: `1px solid ${cat?.color || "#1e293b"}44`, borderRadius: 10, padding: "10px 12px", boxSizing: "border-box" }}>
           {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 4, letterSpacing: "0.04em" }}>{cat.name}</div>}
           <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", marginBottom: 8 }}>{part.name}</div>
           <div style={{ fontSize: 9, color: "#475569", marginBottom: 3 }}>目標コスト</div>
@@ -725,6 +719,21 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
               {overBudget && <span style={{ display: "block", fontSize: 9, color: "#ef4444" }}>▲ 目標超過</span>}
             </div>
           )}
+          {/* 工程ごとの登録ボタン（SVG領域外なのでクリック確実） */}
+          <div style={{ marginTop: 10, borderTop: "1px solid #1e293b", paddingTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ fontSize: 9, color: "#475569", marginBottom: 2 }}>工程を選択して登録</div>
+            {processes.map((proc, ci) => {
+              const cell = getCell(part.id, ci);
+              const hasSuppliers = (cell?.suppliers?.length || 0) > 0;
+              const hasSel = cell?.selected != null;
+              return (
+                <button key={ci} onClick={() => onOpenModal(part.id, part.name, ci)}
+                  style={{ background: hasSel ? "#0a2a1a" : hasSuppliers ? "#0c2040" : "#1e293b", border: `1px solid ${hasSel ? "#22c55e" : hasSuppliers ? "#0ea5e9" : "#334155"}`, borderRadius: 6, color: hasSel ? "#22c55e" : hasSuppliers ? "#0ea5e9" : "#64748b", padding: "4px 8px", fontSize: 10, cursor: "pointer", textAlign: "left", width: "100%" }}>
+                  {hasSel ? "✓ " : hasSuppliers ? "● " : "＋ "}{proc}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </td>
 
@@ -794,20 +803,8 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
                       </div>
                     );
                   })}
-                  {/* 未登録セル：クリックでモーダル */}
                   {col.suppliers.length === 0 && (
-                    <div onClick={() => onOpenModal(part.id, part.name, ci)}
-                      style={{ height: NODE_H, border: "2px dashed #334155", borderRadius: 9, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 20, cursor: "pointer", gap: 4 }}>
-                      <span>＋</span>
-                      <span style={{ fontSize: 9, color: "#334155" }}>タップして登録</span>
-                    </div>
-                  )}
-                  {/* 候補追加ボタン（登録済みの場合） */}
-                  {col.suppliers.length > 0 && (
-                    <div onClick={() => onOpenModal(part.id, part.name, ci)}
-                      style={{ marginTop: 4, border: "1px dashed #334155", borderRadius: 7, padding: "4px 0", textAlign: "center", cursor: "pointer", color: "#475569", fontSize: 10 }}>
-                      ＋ 候補・編集
-                    </div>
+                    <div style={{ height: NODE_H, border: "1px dashed #1e293b", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", color: "#334155", fontSize: 11 }}>未登録</div>
                   )}
                 </div>
               );
@@ -837,7 +834,7 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
 }
 
 // 全体フロー表（工程ヘッダー行 + 部品行リスト）
-function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal }) {
+function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, onMoveProc, onDeleteProc, showConfirm }) {
   const displayParts = partIds === "__all__"
     ? parts
     : parts.filter(p => partIds.includes(p.id));
@@ -862,13 +859,23 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>部品</span>
               </div>
             </th>
-            {/* 工程ヘッダー（→ 付き） */}
+            {/* 工程ヘッダー（削除・並び替え付き） */}
             <th style={{ padding: "0 0 10px 0", verticalAlign: "bottom" }}>
               <div style={{ display: "flex", gap: COL_GAP }}>
                 {processes.map((proc, ci) => (
                   <div key={ci} style={{ width: NODE_W, flexShrink: 0, display: "flex", alignItems: "center", gap: 0 }}>
-                    <div style={{ flex: 1, background: "#1e293b", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{proc}</span>
+                    <div style={{ flex: 1, background: "#1e293b", borderRadius: 8, padding: "6px 8px", position: "relative" }}>
+                      {/* 工程名 */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textAlign: "center", marginBottom: 4 }}>{proc}</div>
+                      {/* 操作ボタン行 */}
+                      <div style={{ display: "flex", justifyContent: "center", gap: 4 }}>
+                        <button onClick={() => onMoveProc(ci, -1)} disabled={ci === 0}
+                          style={{ background: ci === 0 ? "none" : "#0f172a", border: "1px solid #334155", borderRadius: 5, color: ci === 0 ? "#1e293b" : "#64748b", width: 22, height: 20, fontSize: 11, cursor: ci === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>←</button>
+                        <button onClick={() => onMoveProc(ci, 1)} disabled={ci === processes.length - 1}
+                          style={{ background: ci === processes.length - 1 ? "none" : "#0f172a", border: "1px solid #334155", borderRadius: 5, color: ci === processes.length - 1 ? "#1e293b" : "#64748b", width: 22, height: 20, fontSize: 11, cursor: ci === processes.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>→</button>
+                        <button onClick={() => showConfirm(`「${proc}」を削除しますか？`, () => onDeleteProc(ci))}
+                          style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 5, color: "#475569", width: 22, height: 20, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
+                      </div>
                     </div>
                     {ci < processes.length - 1 && (
                       <div style={{ width: COL_GAP, textAlign: "center", color: "#334155", fontSize: 16, flexShrink: 0 }}>→</div>
@@ -1442,12 +1449,30 @@ function App() {
             {/* ── フロー図本体 ── */}
             {(!flowPartId || flowPartId === "__all__") ? (
               <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })} />
+                <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
+                  onMoveProc={(ci, dir) => {
+                    const next = [...processes];
+                    const target = ci + dir;
+                    if (target < 0 || target >= next.length) return;
+                    [next[ci], next[target]] = [next[target], next[ci]];
+                    setProcesses(next);
+                  }}
+                  onDeleteProc={(ci) => removeProcess(processes[ci].id)}
+                  showConfirm={showConfirm} />
               </div>
             ) : (
               currentFlowPart && (
                 <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                  <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })} />
+                  <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
+                  onMoveProc={(ci, dir) => {
+                    const next = [...processes];
+                    const target = ci + dir;
+                    if (target < 0 || target >= next.length) return;
+                    [next[ci], next[target]] = [next[target], next[ci]];
+                    setProcesses(next);
+                  }}
+                  onDeleteProc={(ci) => removeProcess(processes[ci].id)}
+                  showConfirm={showConfirm} />
                 </div>
               )
             )}
