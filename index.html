@@ -4,23 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>商流シミュレーター</title>
-  <meta name="theme-color" content="#020817" />
+  <meta name="theme-color" content="#6366f1" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="商流" />
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #020817; }</style>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
-  </script>
-  <meta name="apple-mobile-web-app-title" content="商流シミュレーター" />
-  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #020817; }</style>
-  <script>
-    window.onerror = function(msg, src, line, col, err) {
+    window.onerror = function(msg, src, line) {
       document.getElementById('root').innerHTML =
-        '<div style="color:red;padding:20px;font-family:monospace;background:#fff;white-space:pre-wrap">Error: ' + msg + '\nLine: ' + line + '</div>';
+        '<div style="color:red;padding:20px;font-family:monospace;background:#fff">Error: ' + msg + ' (line ' + line + ')</div>';
     };
   </script>
 </head>
@@ -663,7 +660,7 @@ function MatrixCell({ cellData, onClick }) {
 
 // ─── フロービュー（テーブル形式・部品行＋工程列） ─────────────────────
 // 1部品分のサプライヤーカラムを描画するサブコンポーネント
-function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, setTargetCostMap }) {
+function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal }) {
   const NODE_W = 180, NODE_H = 78, NODE_GAP = 8, COL_GAP = 44;
   const [tooltip, setTooltip] = useState(null);
 
@@ -797,8 +794,20 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
                       </div>
                     );
                   })}
+                  {/* 未登録セル：クリックでモーダル */}
                   {col.suppliers.length === 0 && (
-                    <div style={{ height: NODE_H, border: "1px dashed #1e293b", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", color: "#1e293b", fontSize: 11 }}>未登録</div>
+                    <div onClick={() => onOpenModal(part.id, part.name, ci)}
+                      style={{ height: NODE_H, border: "2px dashed #334155", borderRadius: 9, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 20, cursor: "pointer", gap: 4 }}>
+                      <span>＋</span>
+                      <span style={{ fontSize: 9, color: "#334155" }}>タップして登録</span>
+                    </div>
+                  )}
+                  {/* 候補追加ボタン（登録済みの場合） */}
+                  {col.suppliers.length > 0 && (
+                    <div onClick={() => onOpenModal(part.id, part.name, ci)}
+                      style={{ marginTop: 4, border: "1px dashed #334155", borderRadius: 7, padding: "4px 0", textAlign: "center", cursor: "pointer", color: "#475569", fontSize: 10 }}>
+                      ＋ 候補・編集
+                    </div>
                   )}
                 </div>
               );
@@ -828,7 +837,7 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
 }
 
 // 全体フロー表（工程ヘッダー行 + 部品行リスト）
-function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap }) {
+function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal }) {
   const displayParts = partIds === "__all__"
     ? parts
     : parts.filter(p => partIds.includes(p.id));
@@ -836,7 +845,7 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
   if (displayParts.length === 0) return (
     <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155", border: "2px dashed #1e293b", borderRadius: 12 }}>
       <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
-      <p style={{ margin: 0, fontSize: 12 }}>マトリクスビューで部品・サプライヤーを登録すると表示されます</p>
+      <p style={{ margin: 0, fontSize: 12 }}>上の「＋ 部品」ボタンで部品を追加してください</p>
     </div>
   );
 
@@ -881,6 +890,7 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
               setCell={setCell}
               targetCostMap={targetCostMap}
               setTargetCostMap={setTargetCostMap}
+              onOpenModal={onOpenModal}
             />
           ))}
         </tbody>
@@ -1432,12 +1442,12 @@ function App() {
             {/* ── フロー図本体 ── */}
             {(!flowPartId || flowPartId === "__all__") ? (
               <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
+                <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })} />
               </div>
             ) : (
               currentFlowPart && (
                 <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                  <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
+                  <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })} />
                 </div>
               )
             )}
