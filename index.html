@@ -684,55 +684,57 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
   var [arrowLines, setArrowLines] = useState([]);
 
   // DOM計測でSVG線座標を更新
-  useEffect(function() {
+  function recalcLines() {
     if (!containerRef.current) return;
     var cr = containerRef.current.getBoundingClientRect();
+    // コンテナ自身のスクロール位置を加算
+    var scrollX = containerRef.current.scrollLeft || 0;
+    var scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+
+    function relX(rect, side) {
+      return (side === 'right' ? rect.right : rect.left) - cr.left + scrollX;
+    }
+    function relY(rect) {
+      return rect.top + rect.height / 2 - cr.top + scrollY;
+    }
 
     // 部品間合流線
     var lines = crossLinks.map(function(link) {
-      var fromKey = link.fromPartId + "_" + link.fromProcIdx;
-      var toKey = link.toPartId + "_" + link.toProcIdx;
-      var fromEl = nodeRefs.current[fromKey];
-      var toEl = nodeRefs.current[toKey];
+      var fromEl = nodeRefs.current[link.fromPartId + "_" + link.fromProcIdx];
+      var toEl   = nodeRefs.current[link.toPartId   + "_" + link.toProcIdx];
       if (!fromEl || !toEl) return null;
       var fr = fromEl.getBoundingClientRect();
       var tr = toEl.getBoundingClientRect();
-      return {
-        id: link.id,
-        x1: fr.right - cr.left,
-        y1: fr.top + fr.height / 2 - cr.top,
-        x2: tr.left - cr.left,
-        y2: tr.top + tr.height / 2 - cr.top,
-      };
+      return { id: link.id,
+        x1: relX(fr,'right'), y1: relY(fr),
+        x2: relX(tr,'left'),  y2: relY(tr) };
     }).filter(Boolean);
     setSvgLines(lines);
 
-    // 工程間採用矢印（採用カード右端 → 次採用カード左端）
+    // 工程間採用矢印
     var arrows = [];
     displayParts.forEach(function(part) {
       processes.forEach(function(proc, ci) {
         if (ci === 0) return;
-        var prevKey = part.id + "_" + (ci - 1);
-        var currKey = part.id + "_" + ci;
-        var prevEl = nodeRefs.current[prevKey];
-        var currEl = nodeRefs.current[currKey];
+        var prevEl = nodeRefs.current[part.id + "_" + (ci-1)];
+        var currEl = nodeRefs.current[part.id + "_" + ci];
         if (!prevEl || !currEl) return;
-        var prevCell = getCell(part.id, ci - 1);
+        var prevCell = getCell(part.id, ci-1);
         var currCell = getCell(part.id, ci);
-        var adopted = prevCell && prevCell.selected && currCell && currCell.selected;
+        var adopted  = prevCell && prevCell.selected && currCell && currCell.selected;
         var pr = prevEl.getBoundingClientRect();
         var cr2 = currEl.getBoundingClientRect();
-        arrows.push({
-          id: part.id + "_arr_" + ci,
-          x1: pr.right - cr.left,
-          y1: pr.top + pr.height / 2 - cr.top,
-          x2: cr2.left - cr.left,
-          y2: cr2.top + cr2.height / 2 - cr.top,
-          adopted: adopted,
-        });
+        arrows.push({ id: part.id+"_arr_"+ci,
+          x1: relX(pr,'right'), y1: relY(pr),
+          x2: relX(cr2,'left'), y2: relY(cr2),
+          adopted: adopted });
       });
     });
     setArrowLines(arrows);
+  }
+
+  useEffect(function() {
+    recalcLines();
   }, [crossLinks, displayParts.length, processes.length,
       displayParts.map(function(p) {
         return processes.map(function(proc, ci) {
@@ -740,6 +742,12 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
         }).join(',');
       }).join('|')
   ]);
+
+  // スクロール時も再計算
+  useEffect(function() {
+    window.addEventListener('scroll', recalcLines, true);
+    return function() { window.removeEventListener('scroll', recalcLines, true); };
+  }, [crossLinks, displayParts.length, processes.length]);
 
   if (displayParts.length === 0) return (
     <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155", border: "2px dashed #1e293b", borderRadius: 12 }}>
