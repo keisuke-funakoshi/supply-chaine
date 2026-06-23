@@ -961,7 +961,8 @@ function App() {
     saveToArchive(snapshot);
     setArchive(loadArchive());
     // このテーマをリセット（削除ではなくクリア）
-    updateActiveData({ ...makeBlankThemeData(theme.name + " (完了済)"), theme: { ...theme, name: theme.name + " (完了済)" } });
+    const blankData = makeBlankThemeData();
+    updateActiveData({ ...blankData, theme: { ...blankData.theme, name: "新規開発テーマ" }, originArchiveId: null });
     setView("archive");
   };
 
@@ -986,12 +987,53 @@ function App() {
       parts: snap.parts,
       processes: snap.processes,
       matrix: snap.matrix,
+      originArchiveId: snap.id,   // 元のアーカイブIDを記録
     };
     const next = [...themes, newEntry];
     setThemesRaw(next);
     saveThemes(next);
     setActiveThemeId(newTheme.id);
-    setView("matrix");
+    setView("flow");
+  };
+
+  // 再編集テーマをアーカイブに保存（上書き or 別名）
+  const saveEditedToArchive = (overwrite) => {
+    const activeEntry = themes.find(t => t.theme.id === activeThemeId);
+    const origId = activeEntry?.originArchiveId;
+
+    const completedCellsNow = parts.reduce((cnt, part) =>
+      cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
+    const totalCellsNow = parts.length * processes.length;
+    const totalCostNow = parts.reduce((sum, part) =>
+      sum + processes.reduce((s2, _, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers?.find(s => s.id === cell.selected);
+        return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+      }, 0), 0);
+
+    const snapshot = {
+      id: (overwrite && origId) ? origId : newId(),
+      archivedAt: new Date().toISOString(),
+      theme, categories, parts, processes, matrix,
+      completedCells: completedCellsNow,
+      totalCells: totalCellsNow,
+      totalCost: totalCostNow,
+    };
+
+    if (overwrite && origId) {
+      // 元のアーカイブを上書き
+      const list = loadArchive().map(s => s.id === origId ? snapshot : s);
+      localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list));
+    } else {
+      // 新規追加
+      saveToArchive(snapshot);
+    }
+    setArchive(loadArchive());
+
+    // originArchiveId を更新して次回も上書き可能にする
+    updateActiveData({ originArchiveId: snapshot.id });
+
+    setView("archive");
   };
 
   // PDF出力ラッパー — 全部品モードは部品ごとに別ウィンドウで連続出力
@@ -1070,6 +1112,19 @@ function App() {
               style={{ background: "#450a0a", border: "1px solid #ef444433", borderRadius: 7, color: "#ef4444", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
               📄 PDF{(!flowPartId || flowPartId === "__all__") ? `（全${parts.length}部品）` : ""}
             </button>
+          )}
+          {/* 再編集テーマの場合: 上書き・別名保存ボタン */}
+          {themes.find(t => t.theme.id === activeThemeId)?.originArchiveId && (
+            <>
+              <button onClick={() => showConfirm("元のアーカイブを上書き保存しますか？", () => saveEditedToArchive(true))}
+                style={{ background: "#0f2a1a", border: "1px solid #22c55e55", borderRadius: 7, color: "#22c55e", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                💾 上書き保存
+              </button>
+              <button onClick={() => showConfirm("新しいアーカイブとして別名保存しますか？", () => saveEditedToArchive(false))}
+                style={{ background: "#0c2040", border: "1px solid #0ea5e955", borderRadius: 7, color: "#0ea5e9", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                💾 別名保存
+              </button>
+            </>
           )}
           <button onClick={() => completeAndArchive()}
             style={{ background: "#1c1c3a", border: "1px solid #6366f133", borderRadius: 7, color: "#a5b4fc", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -1544,6 +1599,7 @@ function App() {
                             style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 7, color: "#fff", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             ✏ 再編集
                           </button>
+                          <div style={{ fontSize: 9, color: "#475569", textAlign: "center", marginTop: 2 }}>編集後に上書き/別名保存</div>
                           <button onClick={() => restoreArchiveItem(snap)}
                             style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             🔄 上書き復元
