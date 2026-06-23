@@ -834,7 +834,7 @@ function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, se
 }
 
 // 全体フロー表（工程ヘッダー行 + 部品行リスト）
-function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, onMoveProc, onDeleteProc, showConfirm }) {
+function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal }) {
   const displayParts = partIds === "__all__"
     ? parts
     : parts.filter(p => partIds.includes(p.id));
@@ -859,23 +859,13 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>部品</span>
               </div>
             </th>
-            {/* 工程ヘッダー（削除・並び替え付き） */}
+            {/* 工程ヘッダー */}
             <th style={{ padding: "0 0 10px 0", verticalAlign: "bottom" }}>
               <div style={{ display: "flex", gap: COL_GAP }}>
                 {processes.map((proc, ci) => (
                   <div key={ci} style={{ width: NODE_W, flexShrink: 0, display: "flex", alignItems: "center", gap: 0 }}>
-                    <div style={{ flex: 1, background: "#1e293b", borderRadius: 8, padding: "6px 8px", position: "relative" }}>
-                      {/* 工程名 */}
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textAlign: "center", marginBottom: 4 }}>{proc}</div>
-                      {/* 操作ボタン行 */}
-                      <div style={{ display: "flex", justifyContent: "center", gap: 4 }}>
-                        <button onClick={() => onMoveProc(ci, -1)} disabled={ci === 0}
-                          style={{ background: ci === 0 ? "none" : "#0f172a", border: "1px solid #334155", borderRadius: 5, color: ci === 0 ? "#1e293b" : "#64748b", width: 22, height: 20, fontSize: 11, cursor: ci === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>←</button>
-                        <button onClick={() => onMoveProc(ci, 1)} disabled={ci === processes.length - 1}
-                          style={{ background: ci === processes.length - 1 ? "none" : "#0f172a", border: "1px solid #334155", borderRadius: 5, color: ci === processes.length - 1 ? "#1e293b" : "#64748b", width: 22, height: 20, fontSize: 11, cursor: ci === processes.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>→</button>
-                        <button onClick={() => showConfirm(`「${proc}」を削除しますか？`, () => onDeleteProc(ci))}
-                          style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 5, color: "#475569", width: 22, height: 20, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
-                      </div>
+                    <div style={{ flex: 1, background: "#1e293b", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{proc}</span>
                     </div>
                     {ci < processes.length - 1 && (
                       <div style={{ width: COL_GAP, textAlign: "center", color: "#334155", fontSize: 16, flexShrink: 0 }}>→</div>
@@ -1413,6 +1403,35 @@ function App() {
               </div>
             </div>
 
+            {/* ── 工程管理バー（並び替え・削除）── */}
+            <div style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 14px", marginBottom: 12, overflowX: "auto" }}>
+              <div style={{ fontSize: 10, color: "#475569", marginBottom: 8 }}>工程の順番・削除</div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
+                {processes.map((proc, ci) => (
+                  <div key={proc.id} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 8px", display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>{proc.name}</span>
+                      <button onClick={() => {
+                        if (ci === 0) return;
+                        const next = [...processes];
+                        [next[ci], next[ci-1]] = [next[ci-1], next[ci]];
+                        setProcesses(next);
+                      }} style={{ background: "none", border: "none", color: ci === 0 ? "#1e293b" : "#64748b", cursor: ci === 0 ? "default" : "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>←</button>
+                      <button onClick={() => {
+                        if (ci === processes.length - 1) return;
+                        const next = [...processes];
+                        [next[ci], next[ci+1]] = [next[ci+1], next[ci]];
+                        setProcesses(next);
+                      }} style={{ background: "none", border: "none", color: ci === processes.length-1 ? "#1e293b" : "#64748b", cursor: ci === processes.length-1 ? "default" : "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>→</button>
+                      <button onClick={() => showConfirm(`「${proc.name}」を削除しますか？`, () => removeProcess(proc.id))}
+                        style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>×</button>
+                    </div>
+                    {ci < processes.length - 1 && <span style={{ color: "#334155", fontSize: 12 }}>→</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* ── 大分類フィルタ（全部品 / 大分類 / 個別部品） ── */}
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               {/* 全部品ボタン */}
@@ -1450,29 +1469,13 @@ function App() {
             {(!flowPartId || flowPartId === "__all__") ? (
               <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
                 <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
-                  onMoveProc={(ci, dir) => {
-                    const next = [...processes];
-                    const target = ci + dir;
-                    if (target < 0 || target >= next.length) return;
-                    [next[ci], next[target]] = [next[target], next[ci]];
-                    setProcesses(next);
-                  }}
-                  onDeleteProc={(ci) => removeProcess(processes[ci].id)}
-                  showConfirm={showConfirm} />
+                  />
               </div>
             ) : (
               currentFlowPart && (
                 <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
                   <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
-                  onMoveProc={(ci, dir) => {
-                    const next = [...processes];
-                    const target = ci + dir;
-                    if (target < 0 || target >= next.length) return;
-                    [next[ci], next[target]] = [next[target], next[ci]];
-                    setProcesses(next);
-                  }}
-                  onDeleteProc={(ci) => removeProcess(processes[ci].id)}
-                  showConfirm={showConfirm} />
+                  />
                 </div>
               )
             )}
