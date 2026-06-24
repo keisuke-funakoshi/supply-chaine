@@ -600,7 +600,7 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
                 return (
                   <div key={s.id} draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDragEnd={onDragEnd}
                     style={{ minWidth: 200, background: isWinner ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : "#0a1628", border: `1px solid ${isSelected ? "#0ea5e9" : isWinner ? "#22c55e" : "#1e293b"}`, borderRadius: 10, padding: 14, position: "relative", cursor: "grab", flexShrink: 0 }}>
-                    {isWinner && <div style={{ position: "absolute", top: -9, left: 10, background: "#22c55e", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>推奨</div>}
+                    {isWinner && <div style={{ position: "absolute", top: -9, left: 10, background: "#22c55e", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>検討</div>}
                     <div style={{ display: "flex", alignItems: "center", marginBottom: 10, gap: 6 }}>
                       <span style={{ color: "#334155", fontSize: 13 }}>⠿</span>
                       <input value={s.name} onChange={e => changeSupplier(s.id, "name", e.target.value)} placeholder={`サプライヤー ${i + 1}`}
@@ -692,6 +692,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
   function removeCrossLink(id) { saveCL(crossLinks.filter(function(l) { return l.id !== id; })); }
 
   var [arrowLines, setArrowLines] = useState([]);
+  var [winnerArrows, setWinnerArrows] = useState([]);
 
   // DOM計測でSVG線座標を更新
   // getRelPos: 要素のコンテナ基準の座標を返す（スクロール対応）
@@ -753,6 +754,28 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
         });
       }
     });
+    // 検討中ルート（winnerId同士をグレー点線で結ぶ）
+    var winnerArrows = [];
+    displayParts.forEach(function(part) {
+      var winCols = [];
+      processes.forEach(function(proc, ci) {
+        var el = nodeRefs.current[part.id + "_" + ci + "_w"];
+        if (el) winCols.push({ ci: ci, el: el });
+      });
+      for (var wi = 0; wi < winCols.length - 1; wi++) {
+        var wFrom = winCols[wi];
+        var wTo   = winCols[wi + 1];
+        var wpr = getRelPos(wFrom.el, cont);
+        var wcr = getRelPos(wTo.el,   cont);
+        winnerArrows.push({
+          id: part.id + "_warr_" + wFrom.ci + "_" + wTo.ci,
+          x1: wpr.right, y1: wpr.top + wpr.height / 2,
+          x2: wcr.left,  y2: wcr.top + wcr.height / 2,
+          skip: (wTo.ci - wFrom.ci) > 1,
+        });
+      }
+    });
+    setWinnerArrows(winnerArrows);
     setArrowLines(arrows);
   }
 
@@ -816,7 +839,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
       )}
 
       {/* SVGオーバーレイ：工程間矢印 + 部品間合流線 */}
-      {(svgLines.length > 0 || arrowLines.length > 0) && (
+      {(svgLines.length > 0 || arrowLines.length > 0 || winnerArrows.length > 0) && (
         <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible", minWidth: "100%", minHeight: "100%" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
@@ -829,6 +852,23 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
               <path d="M0,0 L7,3.5 L0,7 Z" fill="#334155"/>
             </marker>
           </defs>
+          {/* 検討中ルート（グレー点線） */}
+          {winnerArrows.map(function(a) {
+            var mx = (a.x1 + a.x2) / 2;
+            var my = Math.min(a.y1, a.y2) - 20;
+            var pathD = a.skip
+              ? "M" + a.x1 + "," + a.y1 + " Q" + mx + "," + my + " " + a.x2 + "," + a.y2
+              : null;
+            return (
+              <g key={a.id} opacity={0.6}>
+                {a.skip ? (
+                  <path d={pathD} fill="none" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4,3"/>
+                ) : (
+                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#64748b" strokeWidth={1.5} strokeDasharray="4,3"/>
+                )}
+              </g>
+            );
+          })}
           {/* 工程間矢印（スキップは曲線） */}
           {arrowLines.map(function(a) {
             var mx = (a.x1 + a.x2) / 2;
@@ -998,7 +1038,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
 
                             return (
                               <div key={s.id}
-                                ref={refFn}
+                                ref={function(el) { if (refFn) refFn(el); if (winRefFn) winRefFn(el); }}
                                 onClick={function() {
                                   var newCandidates = candidates.slice();
                                   var newSelected = selected;
@@ -1020,7 +1060,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
                                 {/* 状態バッジ */}
                                 {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
                                 {isCandidate && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#334155", color: "#94a3b8", fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>候補</div>}
-                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, right: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>推奨</div>}
+                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, right: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>検討</div>}
                                 {/* 状態インジケーター */}
                                 <div style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: "50%", background: isSel ? "#0ea5e9" : isCandidate ? "#64748b" : "#1e293b" }}/>
                                 <div style={{ fontSize: 11, fontWeight: 700, color: nameColor, paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>{s.name || ("S" + (si+1))}</div>
@@ -1265,7 +1305,7 @@ function App() {
 
   // アーカイブから新規テーマとして再編集
   const editFromArchive = (snap) => {
-    const newTheme = { ...snap.theme, id: newId(), name: snap.theme.name + " (再編集)" };
+    const newTheme = { ...snap.theme, id: newId(), name: snap.theme.name };
     const newEntry = {
       theme: newTheme,
       categories: snap.categories,
