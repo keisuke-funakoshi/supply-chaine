@@ -540,6 +540,23 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
             style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 8, color: "#fff", padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
           >＋ 追加</button>
         </div>
+      {/* データ修復: 重複部品の削除 */}
+      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px", marginTop: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9", marginBottom: 8 }}>データ修復</div>
+        <p style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>部品が重複している場合に修復します</p>
+        <button onClick={() => showConfirm("重複している部品を削除しますか？", () => {
+          const seen = new Set();
+          const deduped = parts.filter(p => {
+            const key = p.name + "_" + p.categoryId;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setParts(deduped);
+        })}
+          style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>
+          🔧 重複部品を削除
+        </button>
       </div>
     </div>
   );
@@ -1344,6 +1361,16 @@ function App() {
     const name = newPartName.trim();
     const catId = newPartCatId || categories[0]?.id;
     if (!name || !catId) return;
+    // 同一名・同一大分類の重複防止
+    const exists = parts.some(p => p.name === name && p.categoryId === catId);
+    if (exists) {
+      showConfirm('「' + name + '」は既に存在します。それでも追加しますか？', () => {
+        const next = [...parts, { id: newId(), categoryId: catId, name }];
+        setParts(next);
+        setNewPartName("");
+      });
+      return;
+    }
     setParts([...parts, { id: newId(), categoryId: catId, name }]);
     setNewPartName("");
   };
@@ -1634,7 +1661,7 @@ function App() {
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPart()} placeholder="部品名"
+                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addPart(); } }} placeholder="部品名"
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 100 }} />
                 <button onClick={addPart} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 部品</button>
               </div>
