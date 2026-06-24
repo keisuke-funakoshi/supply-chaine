@@ -18,7 +18,7 @@
     }
     window.onerror=function(msg,src,line,col,err){
       document.body.style.background='#fff';
-      document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap">'+msg+'\nLine:'+line+'\n'+(err&&err.stack?err.stack:'')+'</div>';
+      document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap">'+msg+'\nLine:'+line+'</div>';
     };
   </script>
 </head><body>
@@ -262,16 +262,16 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
   out.push('<svg xmlns="http://www.w3.org/2000/svg" width="'+svgW+'" height="'+svgH+'" style="background:#fff;font-family:Arial,sans-serif">');
   out.push('<rect width="'+svgW+'" height="'+svgH+'" fill="#fff"/>');
   var titleY = PAD+14;
-  out.push('<text x="'+PAD+'" y="'+titleY+'" font-size="13" font-weight="bold" fill="#1e293b">'+(catName?catName+' / ':'')+partName+'</text>');
-  out.push('<text x="'+(svgW-PAD)+'" y="'+titleY+'" font-size="10" fill="#94a3b8" text-anchor="end">'+themeName+'</text>');
+  out.push('<text x="'+PAD+'" y="'+titleY+'" font-size="13" font-weight="bold" fill="#1e293b">'+(catName?catName+' / ':'')+partName+'<\/text>');
+  out.push('<text x="'+(svgW-PAD)+'" y="'+titleY+'" font-size="10" fill="#94a3b8" text-anchor="end">'+themeName+'<\/text>');
   var baseY = PAD+20;
   out.push('<rect x="'+PAD+'" y="'+(baseY+HDRH)+'" width="'+LW+'" height="'+(maxRows*(NH+NGAP))+'" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>');
-  out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+HDRH+maxRows*(NH+NGAP)/2+5)+'" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">'+partName+'</text>');
-  out.push('<defs><marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#16a34a"/></marker></defs>');
+  out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+HDRH+maxRows*(NH+NGAP)/2+5)+'" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">'+partName+'<\/text>');
+  out.push('<defs><marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#16a34a"/><\/marker><\/defs>');
   cols.forEach(function(col, ci) {
     var x = PAD+LW+ci*(NW+CGAP);
     out.push('<rect x="'+x+'" y="'+baseY+'" width="'+NW+'" height="'+HDRH+'" rx="6" fill="#334155"/>');
-    out.push('<text x="'+(x+NW/2)+'" y="'+(baseY+HDRH/2+5)+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff">'+col.proc+'</text>');
+    out.push('<text x="'+(x+NW/2)+'" y="'+(baseY+HDRH/2+5)+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff">'+col.proc+'<\/text>');
     if (ci < cols.length-1) {
       var ay = baseY+HDRH/2;
       out.push('<line x1="'+(x+NW)+'" y1="'+ay+'" x2="'+(x+NW+CGAP-8)+'" y2="'+ay+'" stroke="#94a3b8" stroke-width="1.5"/>');
@@ -287,14 +287,14 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
       out.push('<rect x="'+x+'" y="'+ny+'" width="'+NW+'" height="'+NH+'" rx="7" fill="'+bg+'" stroke="'+stroke+'" stroke-width="'+sw2+'"/>');
       if (isSel) {
         out.push('<rect x="'+(x+4)+'" y="'+(ny-7)+'" width="30" height="12" rx="6" fill="#2563eb"/>');
-        out.push('<text x="'+(x+19)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">&#x2713;採用</text>');
+        out.push('<text x="'+(x+19)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">&#x2713;採用<\/text>');
       } else if (isCand) {
         out.push('<rect x="'+(x+4)+'" y="'+(ny-7)+'" width="24" height="12" rx="6" fill="#64748b"/>');
-        out.push('<text x="'+(x+16)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" fill="#fff">候補</text>');
+        out.push('<text x="'+(x+16)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" fill="#fff">候補<\/text>');
       }
-      out.push('<text x="'+(x+8)+'" y="'+(ny+18)+'" font-size="11" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'">'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</text>');
-      if (s.cost) out.push('<text x="'+(x+8)+'" y="'+(ny+34)+'" font-size="9" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
-      if (s.leadTime) out.push('<text x="'+(x+8)+'" y="'+(ny+48)+'" font-size="9" fill="#64748b">LT:'+s.leadTime+'&#26085;</text>');
+      out.push('<text x="'+(x+8)+'" y="'+(ny+18)+'" font-size="11" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'">'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'<\/text>');
+      if (s.cost) out.push('<text x="'+(x+8)+'" y="'+(ny+34)+'" font-size="9" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'<\/text>');
+      if (s.leadTime) out.push('<text x="'+(x+8)+'" y="'+(ny+48)+'" font-size="9" fill="#64748b">LT:'+s.leadTime+'&#26085;<\/text>');
     });
     // 採用ルート矢印
     if (ci>0) {
@@ -312,7 +312,7 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
       }
     }
   });
-  out.push('</svg>');
+  out.push('<\/svg>');
   return out.join('');
 }
 
@@ -323,19 +323,19 @@ function exportPDF(mode, themeName, targetParts, categories, processes, getCell)
       var cat = categories.find(function(c){return c.id===part.categoryId;});
       return buildPartSVG(themeName, part.name, cat?cat.name:'', processes.map(function(p){return p.name;}), getCell, part.id);
     });
-    pages.push('<div>'+svgs.join('<div style="height:24px"></div>')+'</div>');
+    pages.push('<div>'+svgs.join('<div style="height:24px"><\/div>')+'<\/div>');
   } else {
     targetParts.forEach(function(part, i) {
       var cat = categories.find(function(c){return c.id===part.categoryId;});
       var svg = buildPartSVG(themeName, part.name, cat?cat.name:'', processes.map(function(p){return p.name;}), getCell, part.id);
-      pages.push('<div style="page-break-after:'+(i<targetParts.length-1?'always':'avoid')+'">'+svg+'</div>');
+      pages.push('<div style="page-break-after:'+(i<targetParts.length-1?'always':'avoid')+'">'+svg+'<\/div>');
     });
   }
-  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;</title>'
-    +'<style>body{margin:0;padding:16px;background:#fff}@media print{body{margin:0;padding:0}@page{size:landscape;margin:10mm}}</style>'
-    +'</head><body>'+pages.join('')
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;<\/title>'
+    +'<style>body{margin:0;padding:16px;background:#fff}@media print{body{margin:0;padding:0}@page{size:landscape;margin:10mm}}<\/style>'
+    +'<\/head><body>'+pages.join('')
     +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},600);};<\/scr'+'ipt>'
-    +'</body></html>';
+    +'<\/body><\/html>';
   var win = window.open('','_blank');
   if (win){win.document.write(html);win.document.close();}
 }

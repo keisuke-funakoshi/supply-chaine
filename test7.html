@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<style>body{background:#020817;color:#0f0;padding:20px;font-family:monospace;font-size:14px}</style>
+</head><body>
+<div id="s">読み込み中...</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
+<script>window.onerror=function(msg,src,line){document.getElementById('s').innerHTML='<span style="color:red">ERROR line '+line+': '+msg+'</span>';}</script>
+<script type="text/babel" data-presets="react">
+const {useState,useRef,useCallback,useEffect,useMemo}=React;
+// - ユーティリティ -
+const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
+let uid = 300;
+const newId = () => "id" + (uid++);
+
+function scoreSupplier(supplier, allSuppliers) {
+  const parse = (v) => parseFloat(v) || 0;
+  const vals = (key) => allSuppliers.map((s) => parse(s[key])).filter(Boolean);
+  const norm = (val, arr, inv = false) => {
+    if (!arr.length || !val) return 0;
+    const [mn, mx] = [Math.min(...arr), Math.max(...arr)];
+    if (mx === mn) return 100;
+    const n = ((val - mn) / (mx - mn)) * 100;
+    return Math.round(inv ? 100 - n : n);
+  };
+  const p = (k) => parse(supplier[k]);
+  return Math.round(
+    norm(p("cost"), vals("cost"), true) * SCORE_WEIGHTS.cost +
+    norm(p("leadTime"), vals("leadTime"), true) * SCORE_WEIGHTS.leadTime +
+    norm(p("quality"), vals("quality")) * SCORE_WEIGHTS.quality +
+    norm(p("moq"), vals("moq"), true) * SCORE_WEIGHTS.moq
+  );
+}
+
+function useDragSort(items, setItems) {
+  const dragIdx = useRef(null);
+  return {
+    onDragStart: (i) => { dragIdx.current = i; },
+    onDragOver: (e, i) => {
+      e.preventDefault();
+      if (dragIdx.current === null || dragIdx.current === i) return;
+      const next = [...items];
+      const [m] = next.splice(dragIdx.current, 1);
+      next.splice(i, 0, m);
+      dragIdx.current = i;
+      setItems(next);
+    },
+    onDragEnd: () => { dragIdx.current = null; },
+  };
+}
+
+// - アーカイブ (localStorage) -
+const ARCHIVE_KEY = "shoury_archive_v1";
+function loadArchive() {
+  try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]"); } catch { return []; }
+}
+function saveToArchive(snapshot) {
+  const list = loadArchive();
+  list.unshift(snapshot);
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list.slice(0, 50)));
+}
+function deleteFromArchive(id) {
+  const list = loadArchive().filter(s => s.id !== id);
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list));
+}
+
+// - バックアップ（JSONエクスポート/インポート） -
+function exportBackup(theme, categories, parts, processes, matrix, archive) {
+  const data = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    current: { theme, categories, parts, processes, matrix },
+    archive,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "shoury_backup_" + (new Date().toISOString().slice(0,10)) + ".json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(file, onSuccess, onError) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.version || !data.current) throw new Error("形式が不正です");
+      onSuccess(data);
+    } catch (err) {
+      onError("読み込みに失敗しました: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// - Excel出力（図形矢印付き） -
+async function exportExcel(theme, categories, parts, processes, getCell) {
+  const XLSX = { utils: window.XLSX.utils, writeFile: window.XLSX.writeFile };
+
+  // openpyxl は使えないのでSheetJSで矢印なし版 + 別途SVG矢印をBase64画像で埋め込む
+  // SheetJSはコネクタ線に対応しないため、矢印はセル内テキスト "→" で表現し
+  // Anthropic API経由でpython生成する代わりにクライアントサイドで実現可能な範囲で実装
+  const wb = XLSX.utils.book_new();
+
+  categories.forEach(cat => {
+    const catParts = parts.filter(p => p.categoryId === cat.id);
+    if (!catParts.length) return;
+
+    const sheetName = cat.name.slice(0, 31);
+    const aoa = [];
+
+    // Header row 1: theme
+    aoa.push([theme.name]);
+    // Header row 2: category
+    aoa.push(["【" + (cat.name) + "】"]);
+    aoa.push([]);
+
+    // Process header row with arrows
+    const procHeader = ["部品名"];
+    processes.forEach((proc, pi) => {
+      procHeader.push(proc.name);
+      if (pi < processes.length - 1) procHeader.push("→");
+    });
+    aoa.push(procHeader);
+
+    // Each part row
+    catParts.forEach(part => {
+      const row = [part.name];
+      processes.forEach((_, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        if (sel) {
+          row.push(sel.name + "\n¥" + parseFloat(sel.cost || 0).toLocaleString() + "  LT:" + (sel.leadTime || "?") + "日");
+        } else {
+          const count = cell.suppliers.length || 0;
+          row.push(count > 0 ? "(" + (count) + "社検討中)" : "");
+        }
+        if (ci < processes.length - 1) row.push("→");
+      });
+      aoa.push(row);
+
+      // Candidate rows (non-selected)
+      const maxCandidates = Math.max(...processes.map((_, ci) => {
+        const cell = getCell(part.id, ci);
+        return (cell.suppliers || []).filter(s => s.id !== cell.selected).length;
+      }), 0);
+
+      for (let ri = 0; ri < maxCandidates; ri++) {
+        const candRow = [""];
+        processes.forEach((_, ci) => {
+          const cell = getCell(part.id, ci);
+          const others = (cell.suppliers || []).filter(s => s.id !== cell.selected);
+          const s = others[ri];
+          if (s) {
+            candRow.push("  候補: " + (s.name) + "  ¥" + (parseFloat(s.cost || 0).toLocaleString()));
+          } else {
+            candRow.push("");
+          }
+          if (ci < processes.length - 1) candRow.push("");
+        });
+        aoa.push(candRow);
+      }
+      aoa.push([]);
+    });
+
+    // Summary section
+    aoa.push([]);
+    aoa.push(["- コスト集計 -"]);
+    const summaryHeader = ["部品名", ...processes.map(p => p.name), "合計"];
+    aoa.push(summaryHeader);
+    catParts.forEach(part => {
+      let total = 0;
+      const row = [part.name];
+      processes.forEach((_, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        const cost = sel.cost ? parseFloat(sel.cost) : 0;
+        total += cost;
+        row.push(cost ? cost : "");
+      });
+      row.push(total || "");
+      aoa.push(row);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Column widths
+    const colWidths = [{ wch: 14 }];
+    processes.forEach(() => {
+      colWidths.push({ wch: 24 });
+      colWidths.push({ wch: 4 });
+    });
+    ws["!cols"] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  // サマリーシート
+  const summaryAoa = [];
+  summaryAoa.push([theme.name, "", "商流サマリー"]);
+  summaryAoa.push([]);
+  summaryAoa.push(["大分類", "部品名", ...processes.map(p => p.name), "部品合計"]);
+  categories.forEach(cat => {
+    parts.filter(p => p.categoryId === cat.id).forEach((part, pi) => {
+      let total = 0;
+      const row = [pi === 0 ? cat.name : "", part.name];
+      processes.forEach((_, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        const cost = sel ? (sel.name) + " ¥" + (parseFloat(sel.cost || 0).toLocaleString()) : "";
+        const c = sel.cost ? parseFloat(sel.cost) : 0;
+        total += c;
+        row.push(cost);
+      });
+      row.push(total || "");
+      summaryAoa.push(row);
+    });
+    summaryAoa.push([]);
+  });
+  const summaryWs = XLSX.utils.aoa_to_sheet(summaryAoa);
+  summaryWs["!cols"] = [{ wch: 14 }, { wch: 14 }, ...processes.map(() => ({ wch: 26 })), { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, summaryWs, "サマリー");
+
+  XLSX.writeFile(wb, (theme.name) + "_商流検討.xlsx");
+}
+
+// - PDF出力（フロー図SVGをPDF化） -
+// - PDF出力（白背景・全部品/部品ごと） -
+function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) {
+  var NW=190, NH=72, NGAP=8, CGAP=48, LW=130, HDRH=36, PAD=16;
+  var cols = procNames.map(function(proc, ci) {
+    var cell = getCell(partId, ci);
+    return { proc: proc, suppliers: cell&&cell.suppliers?cell.suppliers:[], selected: cell?cell.selected:null, candidates: cell&&cell.candidates?cell.candidates:[] };
+  });
+  var maxRows = Math.max.apply(null, cols.map(function(c){return c.suppliers.length;}).concat([1]));
+  var svgW = PAD + LW + procNames.length*NW + (procNames.length-1)*CGAP + PAD;
+  var svgH = PAD + 20 + HDRH + maxRows*(NH+NGAP) + PAD;
+  var out = [];
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" width="'+svgW+'" height="'+svgH+'" style="background:#fff;font-family:Arial,sans-serif">');
+  out.push('<rect width="'+svgW+'" height="'+svgH+'" fill="#fff"/>');
+  var titleY = PAD+14;
+  out.push('<text x="'+PAD+'" y="'+titleY+'" font-size="13" font-weight="bold" fill="#1e293b">'+(catName?catName+' / ':'')+partName+'</text>');
+  out.push('<text x="'+(svgW-PAD)+'" y="'+titleY+'" font-size="10" fill="#94a3b8" text-anchor="end">'+themeName+'</text>');
+  var baseY = PAD+20;
+  out.push('<rect x="'+PAD+'" y="'+(baseY+HDRH)+'" width="'+LW+'" height="'+(maxRows*(NH+NGAP))+'" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>');
+  out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+HDRH+maxRows*(NH+NGAP)/2+5)+'" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">'+partName+'</text>');
+  out.push('<defs><marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#16a34a"/></marker></defs>');
+  cols.forEach(function(col, ci) {
+    var x = PAD+LW+ci*(NW+CGAP);
+    out.push('<rect x="'+x+'" y="'+baseY+'" width="'+NW+'" height="'+HDRH+'" rx="6" fill="#334155"/>');
+    out.push('<text x="'+(x+NW/2)+'" y="'+(baseY+HDRH/2+5)+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff">'+col.proc+'</text>');
+    if (ci < cols.length-1) {
+      var ay = baseY+HDRH/2;
+      out.push('<line x1="'+(x+NW)+'" y1="'+ay+'" x2="'+(x+NW+CGAP-8)+'" y2="'+ay+'" stroke="#94a3b8" stroke-width="1.5"/>');
+      out.push('<polygon points="'+(x+NW+CGAP-8)+','+(ay-4)+' '+(x+NW+CGAP)+','+ay+' '+(x+NW+CGAP-8)+','+(ay+4)+'" fill="#94a3b8"/>');
+    }
+    col.suppliers.forEach(function(s, si) {
+      var ny = baseY+HDRH+si*(NH+NGAP);
+      var isSel = s.id===col.selected;
+      var isCand = col.candidates.indexOf(s.id)>=0;
+      var bg = isSel?'#eff6ff':isCand?'#f8fafc':'#fff';
+      var stroke = isSel?'#2563eb':'#e2e8f0';
+      var sw2 = isSel?2:1;
+      out.push('<rect x="'+x+'" y="'+ny+'" width="'+NW+'" height="'+NH+'" rx="7" fill="'+bg+'" stroke="'+stroke+'" stroke-width="'+sw2+'"/>');
+      if (isSel) {
+        out.push('<rect x="'+(x+4)+'" y="'+(ny-7)+'" width="30" height="12" rx="6" fill="#2563eb"/>');
+        out.push('<text x="'+(x+19)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">&#x2713;採用</text>');
+      } else if (isCand) {
+        out.push('<rect x="'+(x+4)+'" y="'+(ny-7)+'" width="24" height="12" rx="6" fill="#64748b"/>');
+        out.push('<text x="'+(x+16)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" fill="#fff">候補</text>');
+      }
+      out.push('<text x="'+(x+8)+'" y="'+(ny+18)+'" font-size="11" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'">'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</text>');
+      if (s.cost) out.push('<text x="'+(x+8)+'" y="'+(ny+34)+'" font-size="9" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
+      if (s.leadTime) out.push('<text x="'+(x+8)+'" y="'+(ny+48)+'" font-size="9" fill="#64748b">LT:'+s.leadTime+'&#26085;</text>');
+    });
+    // 採用ルート矢印
+    if (ci>0) {
+      var prev = cols[ci-1];
+      if (prev.selected && col.selected) {
+        var psi = prev.suppliers.findIndex(function(s){return s.id===prev.selected;});
+        var csi2 = col.suppliers.findIndex(function(s){return s.id===col.selected;});
+        if (psi>=0 && csi2>=0) {
+          var px2 = PAD+LW+(ci-1)*(NW+CGAP)+NW;
+          var py2 = baseY+HDRH+psi*(NH+NGAP)+NH/2;
+          var cx3 = PAD+LW+ci*(NW+CGAP);
+          var cy3 = baseY+HDRH+csi2*(NH+NGAP)+NH/2;
+          out.push('<line x1="'+px2+'" y1="'+py2+'" x2="'+(cx3-6)+'" y2="'+cy3+'" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ga)"/>');
+        }
+      }
+    }
+  });
+  out.push('</svg>');
+  return out.join('');
+}
+
+function exportPDF(mode, themeName, targetParts, categories, processes, getCell) {
+  var pages = [];
+  if (mode==="all") {
+    var svgs = targetParts.map(function(part) {
+      var cat = categories.find(function(c){return c.id===part.categoryId;});
+      return buildPartSVG(themeName, part.name, cat?cat.name:'', processes.map(function(p){return p.name;}), getCell, part.id);
+    });
+    pages.push('<div>'+svgs.join('<div style="height:24px"></div>')+'</div>');
+  } else {
+    targetParts.forEach(function(part, i) {
+      var cat = categories.find(function(c){return c.id===part.categoryId;});
+      var svg = buildPartSVG(themeName, part.name, cat?cat.name:'', processes.map(function(p){return p.name;}), getCell, part.id);
+      pages.push('<div style="page-break-after:'+(i<targetParts.length-1?'always':'avoid')+'">'+svg+'</div>');
+document.getElementById('s').textContent = '300行 OK';
+</script>
+</body></html>
