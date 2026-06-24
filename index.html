@@ -678,61 +678,60 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
   var [crossLinks, setCrossLinksRaw] = useState(function() {
     var all = loadCrossLinks(); return all[themeId] || [];
   });
-  var [linkDialog, setLinkDialog] = useState(null); // { fromPartId, fromProcIdx, fromLabel }
-  var nodeRefs = useRef({}); // key: "partId_ci" -> DOM el
+  var [linkDialog, setLinkDialog] = useState(null);
   var containerRef = useRef(null);
   var [svgLines, setSvgLines] = useState([]);
+  var [arrowLines, setArrowLines] = useState([]);
+  var [winLines, setWinLines] = useState([]);
+  var [candLines, setCandLines] = useState([]);
 
   function saveCL(next) { var all = loadCrossLinks(); all[themeId] = next; saveCrossLinks(all); setCrossLinksRaw(next); }
-
   function addCrossLink(fromPartId, fromProcIdx, toPartId, toProcIdx) {
     var next = crossLinks.concat([{ id: newId(), fromPartId: fromPartId, fromProcIdx: fromProcIdx, toPartId: toPartId, toProcIdx: toProcIdx }]);
     saveCL(next); setLinkDialog(null);
   }
   function removeCrossLink(id) { saveCL(crossLinks.filter(function(l) { return l.id !== id; })); }
 
-  var [arrowLines, setArrowLines] = useState([]);
-  var [winLines, setWinLines] = useState([]);
-
-  // DOM計測でSVG線座標を更新
-  // getRelPos: 要素のコンテナ基準の座標を返す（スクロール対応）
-  function getRelPos(el, container) {
-    var eRect = el.getBoundingClientRect();
-    var cRect = container.getBoundingClientRect();
-    // コンテナのスクロール量も加算
-    var scrollLeft = container.scrollLeft || 0;
-    var scrollTop  = container.scrollTop  || 0;
-    return {
-      left:   eRect.left   - cRect.left + scrollLeft,
-      right:  eRect.right  - cRect.left + scrollLeft,
-      top:    eRect.top    - cRect.top  + scrollTop,
-      bottom: eRect.bottom - cRect.top  + scrollTop,
-      width:  eRect.width,
-      height: eRect.height,
-    };
+  // data属性でDOM要素を検索してBoundingRectを取得
+  function getElPos(cont, partId, ci, role) {
+    // role: "adopted" | "win" | "cand" | "any"
+    var sel;
+    if (role === "adopted") {
+      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_adopted"]');
+    } else if (role === "win") {
+      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_win"]');
+    } else if (role === "cand") {
+      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_cand"]');
+    } else {
+      // any: 採用→検討→候補→先頭の優先順
+      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_adopted"]')
+         || cont.querySelector('[data-node="' + partId + '_' + ci + '_win"]')
+         || cont.querySelector('[data-node="' + partId + '_' + ci + '_cand"]')
+         || cont.querySelector('[data-part="' + partId + '"][data-ci="' + ci + '"]');
+    }
+    if (!sel) return null;
+    var eRect = sel.getBoundingClientRect();
+    var cRect = cont.getBoundingClientRect();
+    var sl = cont.scrollLeft || 0, st = cont.scrollTop || 0;
+    return { left: eRect.left - cRect.left + sl, right: eRect.right - cRect.left + sl,
+             top: eRect.top - cRect.top + st, bottom: eRect.bottom - cRect.top + st,
+             width: eRect.width, height: eRect.height };
   }
 
   function recalcLines() {
     if (!containerRef.current) return;
     var cont = containerRef.current;
 
-    // 部品間合流線
+    // 部品間合流線（合流元/先は採用優先、なければ先頭カード）
     var lines = crossLinks.map(function(link) {
-      // cell_ ref（採用カードが存在すれば採用、なければ最初のカード）を使う
-      var fromEl = nodeRefs.current[link.fromPartId + "_" + link.fromProcIdx]
-                || nodeRefs.current["cell_" + link.fromPartId + "_" + link.fromProcIdx];
-      var toEl   = nodeRefs.current[link.toPartId   + "_" + link.toProcIdx]
-                || nodeRefs.current["cell_" + link.toPartId   + "_" + link.toProcIdx];
-      if (!fromEl || !toEl) return null;
-      var fr = getRelPos(fromEl, cont);
-      var tr = getRelPos(toEl,   cont);
-      return { id: link.id,
-        x1: fr.right,            y1: fr.top + fr.height / 2,
-        x2: tr.left,             y2: tr.top + tr.height / 2 };
+      var fr = getElPos(cont, link.fromPartId, link.fromProcIdx, "any");
+      var tr = getElPos(cont, link.toPartId, link.toProcIdx, "any");
+      if (!fr || !tr) return null;
+      return { id: link.id, x1: fr.right, y1: fr.top + fr.height/2, x2: tr.left, y2: tr.top + tr.height/2 };
     }).filter(Boolean);
     setSvgLines(lines);
 
-    // 工程間採用矢印（スキップ対応）
+    // 採用→採用 緑実線矢印
     var arrows = [];
     displayParts.forEach(function(part) {
       var adoptedCols = [];
@@ -741,66 +740,50 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
         if (cell && cell.selected) adoptedCols.push(ci);
       });
       for (var i = 0; i < adoptedCols.length - 1; i++) {
-        var fromCi = adoptedCols[i];
-        var toCi   = adoptedCols[i + 1];
-        var fromEl = nodeRefs.current[part.id + "_" + fromCi];
-        var toEl   = nodeRefs.current[part.id + "_" + toCi];
-        if (!fromEl || !toEl) continue;
-        var pr  = getRelPos(fromEl, cont);
-        var cr2 = getRelPos(toEl,   cont);
-        arrows.push({
-          id: part.id + "_arr_" + fromCi + "_" + toCi,
-          x1: pr.right,            y1: pr.top  + pr.height  / 2,
-          x2: cr2.left,            y2: cr2.top + cr2.height / 2,
-          adopted: true,
-          skip: (toCi - fromCi) > 1,
-        });
+        var fromCi = adoptedCols[i], toCi = adoptedCols[i+1];
+        var fr = getElPos(cont, part.id, fromCi, "adopted");
+        var tr = getElPos(cont, part.id, toCi, "adopted");
+        if (!fr || !tr) continue;
+        arrows.push({ id: part.id+"_arr_"+fromCi+"_"+toCi,
+          x1: fr.right, y1: fr.top+fr.height/2, x2: tr.left, y2: tr.top+tr.height/2,
+          skip: (toCi - fromCi) > 1 });
       }
     });
     setArrowLines(arrows);
 
-    // 検討（isWin）同士のグレー点線：同一部品の隣接工程間
-    var winLines = [];
+    // 検討→検討 グレー点線（隣接工程間）
+    var wLines = [];
     displayParts.forEach(function(part) {
-      // 各工程で isWin なサプライヤーのIDを収集
-      var winByCol = {};
+      var winCols = [];
       processes.forEach(function(proc, ci) {
-        var cell = getCell(part.id, ci);
-        if (!cell) return;
-        var suppliers = cell.suppliers || [];
-        var scores2 = suppliers.map(function(s2) { return scoreSupplier(s2, suppliers); });
-        var maxScore2 = Math.max.apply(null, scores2.concat([0]));
-        suppliers.forEach(function(s2, si) {
-          var isWin2 = suppliers.length > 1 && scores2[si] === maxScore2 && scores2[si] > 0 && s2.id !== cell.selected;
-          if (isWin2) {
-            if (!winByCol[ci]) winByCol[ci] = [];
-            winByCol[ci].push(s2.id);
-          }
-        });
+        var fr = getElPos(cont, part.id, ci, "win");
+        if (fr) winCols.push({ ci: ci, fr: fr });
       });
-      // 隣接する工程ペアで検討同士を結ぶ
-      var cols = Object.keys(winByCol).map(Number).sort(function(a, b) { return a - b; });
-      for (var i = 0; i < cols.length - 1; i++) {
-        var ca = cols[i], cb = cols[i + 1];
-        if (cb - ca !== 1) continue; // 隣接のみ
-        winByCol[ca].forEach(function(aId) {
-          var fromEl2 = nodeRefs.current["win_" + part.id + "_" + ca + "_" + aId];
-          if (!fromEl2) return;
-          winByCol[cb].forEach(function(bId) {
-            var toEl2 = nodeRefs.current["win_" + part.id + "_" + cb + "_" + bId];
-            if (!toEl2) return;
-            var fr2 = getRelPos(fromEl2, cont);
-            var tr2 = getRelPos(toEl2, cont);
-            winLines.push({
-              id: "win_" + part.id + "_" + ca + "_" + aId + "_" + cb + "_" + bId,
-              x1: fr2.right, y1: fr2.top + fr2.height / 2,
-              x2: tr2.left,  y2: tr2.top + tr2.height / 2,
-            });
-          });
-        });
+      for (var i = 0; i < winCols.length - 1; i++) {
+        var a = winCols[i], b = winCols[i+1];
+        if (b.ci - a.ci !== 1) continue;
+        wLines.push({ id: "win_"+part.id+"_"+a.ci+"_"+b.ci,
+          x1: a.fr.right, y1: a.fr.top+a.fr.height/2, x2: b.fr.left, y2: b.fr.top+b.fr.height/2 });
       }
     });
-    setWinLines(winLines);
+    setWinLines(wLines);
+
+    // 候補→候補 黄色点線（隣接工程間）
+    var cLines = [];
+    displayParts.forEach(function(part) {
+      var candCols = [];
+      processes.forEach(function(proc, ci) {
+        var fr = getElPos(cont, part.id, ci, "cand");
+        if (fr) candCols.push({ ci: ci, fr: fr });
+      });
+      for (var i = 0; i < candCols.length - 1; i++) {
+        var a = candCols[i], b = candCols[i+1];
+        if (b.ci - a.ci !== 1) continue;
+        cLines.push({ id: "cand_"+part.id+"_"+a.ci+"_"+b.ci,
+          x1: a.fr.right, y1: a.fr.top+a.fr.height/2, x2: b.fr.left, y2: b.fr.top+b.fr.height/2 });
+      }
+    });
+    setCandLines(cLines);
   }
 
   useEffect(function() {
@@ -809,12 +792,11 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
       displayParts.map(function(p) {
         return processes.map(function(proc, ci) {
           var cell = getCell(p.id, ci);
-          return (cell ? cell.selected : null) + "|" + (cell && cell.candidates ? cell.candidates.join(",") : "");
+          return (cell ? cell.selected : "") + "|" + (cell && cell.candidates ? cell.candidates.join(",") : "");
         }).join(';');
       }).join('|')
   ]);
 
-  // スクロール・リサイズ時も再計算
   useEffect(function() {
     window.addEventListener('scroll', recalcLines, true);
     window.addEventListener('resize', recalcLines);
@@ -863,8 +845,8 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
         </div>
       )}
 
-      {/* SVGオーバーレイ：工程間矢印 + 部品間合流線 + 検討点線 */}
-      {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0) && (
+      {/* SVGオーバーレイ：採用線 + 検討点線 + 候補点線 + 合流線 */}
+      {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0) && (
         <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible", minWidth: "100%", minHeight: "100%" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
@@ -873,11 +855,8 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
             <marker id="gr-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 Z" fill="#22c55e"/>
             </marker>
-            <marker id="gy-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="#334155"/>
-            </marker>
           </defs>
-          {/* 工程間矢印（スキップは曲線） */}
+          {/* 採用→採用 緑実線矢印 */}
           {arrowLines.map(function(a) {
             var mx = (a.x1 + a.x2) / 2;
             var my = Math.min(a.y1, a.y2) - 30;
@@ -886,35 +865,28 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
               : null;
             return (
               <g key={a.id}>
-                {a.adopted && !a.skip && <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={7} opacity={0.12}/>}
+                {!a.skip && <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={7} opacity={0.12}/>}
                 {a.skip ? (
-                  <path d={pathD} fill="none"
-                    stroke="#22c55e" strokeWidth={2.5}
-                    strokeDasharray="6,3"
-                    markerEnd="url(#gr-arrow)" opacity={0.9}/>
+                  <path d={pathD} fill="none" stroke="#22c55e" strokeWidth={2.5} strokeDasharray="6,3" markerEnd="url(#gr-arrow)" opacity={0.9}/>
                 ) : (
-                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                    stroke="#22c55e" strokeWidth={2.5}
-                    markerEnd="url(#gr-arrow)" opacity={1}/>
+                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={2.5} markerEnd="url(#gr-arrow)" opacity={1}/>
                 )}
               </g>
             );
           })}
-          {/* 検討同士のグレー点線 */}
+          {/* 検討→検討 グレー点線 */}
           {winLines.map(function(wl) {
-            return (
-              <line key={wl.id}
-                x1={wl.x1} y1={wl.y1} x2={wl.x2} y2={wl.y2}
-                stroke="#475569" strokeWidth={1.5}
-                strokeDasharray="5,4"
-                opacity={0.7}/>
-            );
+            return <line key={wl.id} x1={wl.x1} y1={wl.y1} x2={wl.x2} y2={wl.y2} stroke="#475569" strokeWidth={1.5} strokeDasharray="5,4" opacity={0.7}/>;
+          })}
+          {/* 候補→候補 黄色点線 */}
+          {candLines.map(function(cl) {
+            return <line key={cl.id} x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,4" opacity={0.7}/>;
           })}
           {/* 部品間合流線 */}
           {svgLines.map(function(line) {
             return (
               <path key={line.id}
-                d={"M" + line.x1 + "," + line.y1 + " C" + (line.x1+60) + "," + line.y1 + " " + (line.x2-60) + "," + line.y2 + " " + line.x2 + "," + line.y2}
+                d={"M"+line.x1+","+line.y1+" C"+(line.x1+60)+","+line.y1+" "+(line.x2-60)+","+line.y2+" "+line.x2+","+line.y2}
                 fill="none" stroke="#6366f1" strokeWidth={2.5} opacity={0.85} markerEnd="url(#cl-arrow)"/>
             );
           })}
@@ -1031,41 +1003,23 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
                         <div>
                           {suppliers.map(function(s, si) {
                             var isSel = s.id === selected;
-                            // candidates: cell.candidates は候補IDの配列
                             var candidates = cell && cell.candidates ? cell.candidates : [];
                             var isCandidate = candidates.indexOf(s.id) >= 0;
-                            // 状態: 採用 > 候補 > なし
-                            // クリックで: なし→候補→採用→なし
                             var status = isSel ? "adopted" : isCandidate ? "candidate" : "none";
                             var score = scores[si];
-                            // isWin: 採用以外の中で最高スコア
+                            // 採用以外の中でスコア最高 → 検討
                             var nonSelScores = suppliers.filter(function(sx) { return sx.id !== selected; }).map(function(sx) { return scoreSupplier(sx, suppliers); });
                             var maxNonSelScore = Math.max.apply(null, nonSelScores.concat([0]));
                             var isWin = !isSel && suppliers.length > 1 && score === maxNonSelScore && score > 0;
                             var sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
 
-                            // ref: 採用カード → 採用矢印用＋合流線用、採用なし時は先頭カードを合流線用に
-                            var _sId = s.id;
-                            var _ci = ci;
-                            var _partId = part.id;
-                            var _isSel = isSel;
-                            var _isWin = isWin;
-                            var _si = si;
-                            var _hasSelected = !!selected;
-                            var refFn = function(el) {
-                              if (!el) return;
-                              // 採用カード: 採用矢印の起点/終点 + 合流線のセル代表
-                              if (_isSel) {
-                                nodeRefs.current[_partId + "_" + _ci] = el;
-                                nodeRefs.current["cell_" + _partId + "_" + _ci] = el;
-                              }
-                              // 採用なし時: 先頭カードのみを合流線のセル代表にする
-                              if (!_hasSelected && _si === 0) {
-                                nodeRefs.current["cell_" + _partId + "_" + _ci] = el;
-                              }
-                              // 検討カード: 検討点線用（採用でなく最高スコアのもの）
-                              if (_isWin) nodeRefs.current["win_" + _partId + "_" + _ci + "_" + _sId] = el;
-                            };
+                            // data属性でDOMを識別（refの代わり）
+                            // data-node: "partId_ci_adopted" / "partId_ci_win" / "partId_ci_cand"
+                            // data-part / data-ci: 全カード共通（先頭カードのフォールバック用）
+                            var dataNode = isSel ? (part.id + "_" + ci + "_adopted")
+                                         : isWin  ? (part.id + "_" + ci + "_win")
+                                         : isCandidate ? (part.id + "_" + ci + "_cand")
+                                         : null;
 
                             // 背景・枠色
                             var bg = isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)"
@@ -1079,7 +1033,8 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
 
                             return (
                               <div key={s.id}
-                                ref={refFn}
+                                data-part={part.id} data-ci={ci}
+                                {...(dataNode ? { "data-node": dataNode } : {})}
                                 onClick={function() {
                                   var newCandidates = candidates.slice();
                                   var newSelected = selected;
@@ -1143,10 +1098,11 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
 
       {/* 凡例 */}
       <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 10, color: "#475569", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#22c55e" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #22c55e", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>採用ルート（緑線）</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#475569", borderTop: "2px dashed #475569" }}/>検討同士（グレー点線）</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#6366f1" }}/>部品間合流線（🔗で追加、×で削除）</div>
-        <div style={{ color: "#334155" }}>カードをタップ: なし → 候補 → 採用 → なし</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#22c55e" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #22c55e", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>採用（緑実線）</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 0, borderTop: "2px dashed #475569" }}/>検討（グレー点線）</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 0, borderTop: "2px dashed #f59e0b" }}/>候補（黄色点線）</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#6366f1" }}/>部品間合流（🔗で追加、×で削除）</div>
+        <div style={{ color: "#334155" }}>tap: なし→候補→採用→なし</div>
       </div>
     </div>
   );
