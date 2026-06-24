@@ -1,38 +1,9 @@
-<!DOCTYPE html>
-<html lang="ja"><head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>商流シミュレーター</title>
-  <meta name="theme-color" content="#6366f1"/>
-  <link rel="manifest" href="manifest.json"/>
-  <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="商流"/>
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#020817}</style>
-  <script>
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister();});});
-      caches.keys().then(function(k){k.forEach(function(x){caches.delete(x);});});
-      window.addEventListener('load',function(){navigator.serviceWorker.register('./sw.js');});
-    }
-    window.onerror=function(msg,src,line,col,err){
-      document.body.style.background='#fff';
-      document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap">'+msg+'\nLine:'+line+'\n'+(err&&err.stack?err.stack:'')+'</div>';
-    };
-  </script>
-</head><body>
-  <div id="root"><div style="color:#fff;padding:40px;text-align:center;font-family:sans-serif">読み込み中...</div></div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script type="text/babel" data-presets="react">
+// v22 built 2026-06-24 10:30
 const {useState,useRef,useCallback,useEffect,useMemo}=React;
-// - ユーティリティ -
+// ─── ユーティリティ ───────────────────────────────────────────────────
 const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
 let uid = 300;
-const newId = () => "id" + (uid++);
+const newId = () => `id${uid++}`;
 
 function scoreSupplier(supplier, allSuppliers) {
   const parse = (v) => parseFloat(v) || 0;
@@ -70,7 +41,7 @@ function useDragSort(items, setItems) {
   };
 }
 
-// - アーカイブ (localStorage) -
+// ─── アーカイブ (localStorage) ────────────────────────────────────────
 const ARCHIVE_KEY = "shoury_archive_v1";
 function loadArchive() {
   try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]"); } catch { return []; }
@@ -85,7 +56,7 @@ function deleteFromArchive(id) {
   localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list));
 }
 
-// - バックアップ（JSONエクスポート/インポート） -
+// ─── バックアップ（JSONエクスポート/インポート） ───────────────────────
 function exportBackup(theme, categories, parts, processes, matrix, archive) {
   const data = {
     version: 1,
@@ -97,7 +68,7 @@ function exportBackup(theme, categories, parts, processes, matrix, archive) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "shoury_backup_" + (new Date().toISOString().slice(0,10)) + ".json";
+  a.download = `shoury_backup_${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -116,7 +87,7 @@ function importBackup(file, onSuccess, onError) {
   reader.readAsText(file);
 }
 
-// - Excel出力（図形矢印付き） -
+// ─── Excel出力（図形矢印付き） ─────────────────────────────────────────
 async function exportExcel(theme, categories, parts, processes, getCell) {
   const XLSX = { utils: window.XLSX.utils, writeFile: window.XLSX.writeFile };
 
@@ -135,7 +106,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
     // Header row 1: theme
     aoa.push([theme.name]);
     // Header row 2: category
-    aoa.push(["【" + (cat.name) + "】"]);
+    aoa.push([`【${cat.name}】`]);
     aoa.push([]);
 
     // Process header row with arrows
@@ -156,7 +127,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
           row.push(sel.name + "\n¥" + parseFloat(sel.cost || 0).toLocaleString() + "  LT:" + (sel.leadTime || "?") + "日");
         } else {
           const count = cell.suppliers.length || 0;
-          row.push(count > 0 ? "(" + (count) + "社検討中)" : "");
+          row.push(count > 0 ? `(${count}社検討中)` : "");
         }
         if (ci < processes.length - 1) row.push("→");
       });
@@ -175,7 +146,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
           const others = (cell.suppliers || []).filter(s => s.id !== cell.selected);
           const s = others[ri];
           if (s) {
-            candRow.push("  候補: " + (s.name) + "  ¥" + (parseFloat(s.cost || 0).toLocaleString()));
+            candRow.push(`  候補: ${s.name}  ¥${parseFloat(s.cost || 0).toLocaleString()}`);
           } else {
             candRow.push("");
           }
@@ -188,7 +159,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 
     // Summary section
     aoa.push([]);
-    aoa.push(["- コスト集計 -"]);
+    aoa.push(["── コスト集計 ──"]);
     const summaryHeader = ["部品名", ...processes.map(p => p.name), "合計"];
     aoa.push(summaryHeader);
     catParts.forEach(part => {
@@ -230,7 +201,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
       processes.forEach((_, ci) => {
         const cell = getCell(part.id, ci);
         const sel = cell.suppliers.find(s => s.id === cell.selected);
-        const cost = sel ? (sel.name) + " ¥" + (parseFloat(sel.cost || 0).toLocaleString()) : "";
+        const cost = sel ? `${sel.name} ¥${parseFloat(sel.cost || 0).toLocaleString()}` : "";
         const c = sel.cost ? parseFloat(sel.cost) : 0;
         total += c;
         row.push(cost);
@@ -244,11 +215,11 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
   summaryWs["!cols"] = [{ wch: 14 }, { wch: 14 }, ...processes.map(() => ({ wch: 26 })), { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, summaryWs, "サマリー");
 
-  XLSX.writeFile(wb, (theme.name) + "_商流検討.xlsx");
+  XLSX.writeFile(wb, `${theme.name}_商流検討.xlsx`);
 }
 
-// - PDF出力（フロー図SVGをPDF化） -
-// - PDF出力（白背景・全部品/部品ごと） -
+// ─── PDF出力（フロー図SVGをPDF化） ────────────────────────────────────
+// ─── PDF出力（白背景・全部品/部品ごと） ─────────────────────────────
 function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) {
   var NW=190, NH=72, NGAP=8, CGAP=48, LW=130, HDRH=36, PAD=16;
   var cols = procNames.map(function(proc, ci) {
@@ -339,7 +310,7 @@ function exportPDF(mode, themeName, targetParts, categories, processes, getCell)
   var win = window.open('','_blank');
   if (win){win.document.write(html);win.document.close();}
 }
-// - サンプルデータ -
+// ─── サンプルデータ ───────────────────────────────────────────────────
 // 階層: テーマ > 大分類(category) > 部品(part) > 工程×サプライヤ
 const SAMPLE_THEME = { id: "t1", name: "次世代スマートセンサー開発" };
 
@@ -435,23 +406,23 @@ const SAMPLE_MATRIX = {
   ]},
 };
 
-// - カラーパレット -
+// ─── カラーパレット ───────────────────────────────────────────────────
 const CAT_COLORS = ["#6366f1","#0ea5e9","#f59e0b","#22c55e","#ec4899","#8b5cf6","#14b8a6"];
 
-// - ScoreBar -
+// ─── ScoreBar ────────────────────────────────────────────────────────
 function ScoreBar({ value }) {
   const color = value >= 70 ? "#22c55e" : value >= 40 ? "#f59e0b" : "#ef4444";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
       <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ width: value + "%", height: "100%", background: color, borderRadius: 2, transition: "width 0.4s" }} />
+        <div style={{ width: `${value}%`, height: "100%", background: color, borderRadius: 2, transition: "width 0.4s" }} />
       </div>
-      <span style={{ fontSize: 10, fontWeight: 700, color: color, minWidth: 24 }}>{value}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, color, minWidth: 24 }}>{value}</span>
     </div>
   );
 }
 
-// - テーマ/大分類設定パネル -
+// ─── テーマ/大分類設定パネル ──────────────────────────────────────────
 function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts, showConfirm }) {
   const [newCatName, setNewCatName] = useState("");
   const drag = useDragSort(categories, setCategories);
@@ -460,7 +431,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
     const name = newCatName.trim();
     if (!name) return;
     const color = CAT_COLORS[categories.length % CAT_COLORS.length];
-    setCategories([...categories, { id: newId(), name: name, color: color }]);
+    setCategories([...categories, { id: newId(), name, color }]);
     setNewCatName("");
   };
 
@@ -469,9 +440,8 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
     setParts(parts.filter(p => p.categoryId !== catId));
   };
 
-  const updateCategoryName = (catId, name) => {
-    setCategories(categories.map(function(c) { return c.id === catId ? Object.assign({}, c, { name: name }) : c; }));
-  };
+  const updateCategoryName = (catId, name) =>
+    setCategories(categories.map(c => c.id === catId ? { ...c, name } : c));
 
   return (
     <div style={{ maxWidth: 680, margin: "0 auto" }}>
@@ -523,7 +493,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
                 />
                 <span style={{ fontSize: 11, color: "#475569", flexShrink: 0 }}>{partCount}部品</span>
                 <button
-                  onClick={() => showConfirm("「" + (cat.name) + "」を削除しますか？（この大分類に属する部品もすべて削除されます）", () => removeCategory(cat.id))}
+                  onClick={() => showConfirm(`「${cat.name}」を削除しますか？（この大分類に属する部品もすべて削除されます）`, () => removeCategory(cat.id))}
                   style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 2 }}
                 >×</button>
               </div>
@@ -567,23 +537,19 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
   );
 }
 
-// - セル詳細モーダル -
+// ─── セル詳細モーダル ─────────────────────────────────────────────────
 function CellModal({ partName, processName, cellData, onUpdate, onClose, showConfirm }) {
   const suppliers = cellData.suppliers || [];
   const selected = cellData.selected || null;
 
-  const addSupplier = () => {
+  const addSupplier = () =>
     onUpdate({ ...cellData, suppliers: [...suppliers, { id: newId(), name: "", cost: "", leadTime: "", quality: "", moq: "", notes: "" }] });
-  }
-  const removeSupplier = (id) => {
+  const removeSupplier = (id) =>
     onUpdate({ ...cellData, suppliers: suppliers.filter(s => s.id !== id), selected: selected === id ? null : selected });
-  }
-  const changeSupplier = (id, key, val) => {
+  const changeSupplier = (id, key, val) =>
     onUpdate({ ...cellData, suppliers: suppliers.map(s => s.id === id ? { ...s, [key]: val } : s) });
-  }
-  const selectSupplier = (id) => {
+  const selectSupplier = (id) =>
     onUpdate({ ...cellData, selected: selected === id ? null : id });
-  }
 
   const scores = Object.fromEntries(suppliers.map(s => [s.id, scoreSupplier(s, suppliers)]));
   const maxScore = Math.max(...Object.values(scores), 0);
@@ -625,13 +591,13 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
                 const isSelected = selected === s.id;
                 return (
                   <div key={s.id} draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDragEnd={onDragEnd}
-                    style={{ minWidth: 200, background: isWinner ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : "#0a1628", border: "1px solid " + (isSelected ? "#0ea5e9" : isWinner ? "#22c55e" : "#1e293b"), borderRadius: 10, padding: 14, position: "relative", cursor: "grab", flexShrink: 0 }}>
+                    style={{ minWidth: 200, background: isWinner ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : "#0a1628", border: `1px solid ${isSelected ? "#0ea5e9" : isWinner ? "#22c55e" : "#1e293b"}`, borderRadius: 10, padding: 14, position: "relative", cursor: "grab", flexShrink: 0 }}>
                     {isWinner && <div style={{ position: "absolute", top: -9, left: 10, background: "#22c55e", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>推奨</div>}
                     <div style={{ display: "flex", alignItems: "center", marginBottom: 10, gap: 6 }}>
                       <span style={{ color: "#334155", fontSize: 13 }}>⠿</span>
-                      <input value={s.name} onChange={e => changeSupplier(s.id, "name", e.target.value)} placeholder={"サプライヤー " + (i + 1)}
+                      <input value={s.name} onChange={e => changeSupplier(s.id, "name", e.target.value)} placeholder={`サプライヤー ${i + 1}`}
                         style={{ flex: 1, background: "transparent", border: "none", borderBottom: "1px solid #334155", color: "#f1f5f9", fontSize: 13, fontWeight: 700, padding: "2px 0", outline: "none" }} />
-                      <button onClick={() => showConfirm("「" + (s.name || "このサプライヤー") + "」を削除しますか？", () => removeSupplier(s.id))} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
+                      <button onClick={() => showConfirm(`「${s.name || "このサプライヤー"}」を削除しますか？`, () => removeSupplier(s.id))} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
                     </div>
                     {fields.map(f => (
                       <div key={f.key} style={{ marginBottom: 7 }}>
@@ -647,7 +613,7 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
                       style={{ width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", padding: "5px 8px", fontSize: 10, outline: "none", resize: "none", boxSizing: "border-box", marginBottom: 8 }} />
                     <ScoreBar value={score} />
                     <button onClick={() => selectSupplier(s.id)}
-                      style={{ width: "100%", marginTop: 8, background: isSelected ? "linear-gradient(135deg,#0ea5e9,#6366f1)" : "#1e293b", border: "1px solid " + (isSelected ? "transparent" : "#334155"), borderRadius: 6, color: isSelected ? "#fff" : "#94a3b8", padding: "6px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      style={{ width: "100%", marginTop: 8, background: isSelected ? "linear-gradient(135deg,#0ea5e9,#6366f1)" : "#1e293b", border: `1px solid ${isSelected ? "transparent" : "#334155"}`, borderRadius: 6, color: isSelected ? "#fff" : "#94a3b8", padding: "6px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                       {isSelected ? "✓ 採用中" : "採用する"}
                     </button>
                   </div>
@@ -661,14 +627,14 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
   );
 }
 
-// - マトリクスセル -
+// ─── マトリクスセル ───────────────────────────────────────────────────
 function MatrixCell({ cellData, onClick }) {
   const suppliers = cellData.suppliers || [];
   const selected = cellData.selected || null;
   const sel = suppliers.find(s => s.id === selected);
   const hasData = suppliers.length > 0;
   return (
-    <div onClick={onClick} style={{ background: sel ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : hasData ? "#0f172a" : "#080f1a", border: "1px solid " + (sel ? "#22c55e" : hasData ? "#1e293b" : "#0f172a"), borderRadius: 8, padding: "9px 11px", cursor: "pointer", minHeight: 64, transition: "all 0.15s", position: "relative", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+    <div onClick={onClick} style={{ background: sel ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : hasData ? "#0f172a" : "#080f1a", border: `1px solid ${sel ? "#22c55e" : hasData ? "#1e293b" : "#0f172a"}`, borderRadius: 8, padding: "9px 11px", cursor: "pointer", minHeight: 64, transition: "all 0.15s", position: "relative", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
       {sel ? (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, color: "#f1f5f9", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.name || "未入力"}</div>
@@ -692,7 +658,7 @@ function MatrixCell({ cellData, onClick }) {
   );
 }
 
-// - フロービュー -
+// ─── フロービュー ────────────────────────────────────────────────────
 const CROSS_LINKS_KEY = "shoury_crosslinks_v1";
 function loadCrossLinks() { try { return JSON.parse(localStorage.getItem(CROSS_LINKS_KEY) || "{}"); } catch { return {}; } }
 function saveCrossLinks(data) { localStorage.setItem(CROSS_LINKS_KEY, JSON.stringify(data)); }
@@ -1096,7 +1062,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
   );
 }
 
-// - テーマデータ構造ヘルパー -
+// ─── テーマデータ構造ヘルパー ─────────────────────────────────────────
 const THEMES_KEY = "shoury_themes_v1";
 const ACTIVE_KEY = "shoury_active_v1";
 
@@ -1145,7 +1111,7 @@ function loadActiveId(themes) {
   return themes[0].theme.id || null;
 }
 
-// - メインアプリ -
+// ─── メインアプリ ─────────────────────────────────────────────────────
 function App() {
   const [themes, setThemesRaw] = useState(() => loadThemes());
   const [activeThemeId, setActiveThemeIdRaw] = useState(() => loadActiveId(loadThemes()));
@@ -1164,7 +1130,7 @@ function App() {
 
   const showConfirm = (message, onOk) => setConfirmModal({ message, onOk });
 
-  // - アクティブテーマデータの読み書き -
+  // ── アクティブテーマデータの読み書き ──
   const activeData = themes.find(t => t.theme.id === activeThemeId) || themes[0] || makeBlankThemeData();
   const theme = activeData.theme;
   const categories = activeData.categories || [];
@@ -1173,9 +1139,8 @@ function App() {
   const matrix = activeData.matrix || {};
 
   const updateActiveData = (patch) => {
-    const next = themes.map(t => {
-      t.theme.id === activeThemeId ? { ...t, ...patch } : t;
-    }
+    const next = themes.map(t =>
+      t.theme.id === activeThemeId ? { ...t, ...patch } : t
     );
     setThemesRaw(next);
     saveThemes(next);
@@ -1194,7 +1159,7 @@ function App() {
     setView("matrix");
   };
 
-  // - テーマ追加・削除 -
+  // ── テーマ追加・削除 ──
   const addTheme = () => {
     const blank = makeBlankThemeData();
     const next = [...themes, blank];
@@ -1214,11 +1179,12 @@ function App() {
     });
   };
 
-  const getCell = useCallback((partId, ci) => matrix[(partId) + "_" + (ci)] || { suppliers: [], selected: null }, [matrix]);
+  const getCell = useCallback((partId, ci) => matrix[`${partId}_${ci}`] || { suppliers: [], selected: null }, [matrix]);
   const setCell = (partId, ci, data) => {
-    const next = themes.map(t => {
-      t.theme.id === activeThemeId ? { ...t, matrix: { ...t.matrix, [(partId) + "_" + (ci)]: data } } : t;
-    }
+    const next = themes.map(t =>
+      t.theme.id === activeThemeId
+        ? { ...t, matrix: { ...t.matrix, [`${partId}_${ci}`]: data } }
+        : t
     );
     setThemesRaw(next);
     saveThemes(next);
@@ -1252,15 +1218,17 @@ function App() {
   };
 
   // 完了してアーカイブへ
-  const completeAndArchive = () => { showConfirm("「" + (theme.name) + "」をアーカイブに保存して新規テーマを開始しますか？", _doComplete); };
+  const completeAndArchive = () => { showConfirm(`「${theme.name}」をアーカイブに保存して新規テーマを開始しますか？`, _doComplete); };
   const _doComplete = () => {
-    const completedCellsNow = parts.reduce((cnt, part) => {
+    const completedCellsNow = parts.reduce((cnt, part) =>
       cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
-    }
     const totalCellsNow = parts.length * processes.length;
-    const totalCostNow = parts.reduce((sum, part) => {
-      sum + processes.reduce((s2, _, ci) => { const cell = getCell(part.id, ci); const sel = cell.suppliers.find(s => s.id === cell.selected); return sel.cost ? s2 + parseFloat(sel.cost) : s2; }, 0), 0);
-    }
+    const totalCostNow = parts.reduce((sum, part) =>
+      sum + processes.reduce((s2, _, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        return sel.cost ? s2 + parseFloat(sel.cost) : s2;
+      }, 0), 0);
     const snapshot = {
       id: newId(),
       archivedAt: new Date().toISOString(),
@@ -1310,13 +1278,15 @@ function App() {
     const activeEntry = themes.find(t => t.theme.id === activeThemeId);
     const origId = activeEntry.originArchiveId;
 
-    const completedCellsNow = parts.reduce((cnt, part) => {
+    const completedCellsNow = parts.reduce((cnt, part) =>
       cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
-    }
     const totalCellsNow = parts.length * processes.length;
-    const totalCostNow = parts.reduce((sum, part) => {
-      sum + processes.reduce((s2, _, ci) => { const cell = getCell(part.id, ci); const sel = cell.suppliers.find(s => s.id === cell.selected); return sel.cost ? s2 + parseFloat(sel.cost) : s2; }, 0), 0);
-    }
+    const totalCostNow = parts.reduce((sum, part) =>
+      sum + processes.reduce((s2, _, ci) => {
+        const cell = getCell(part.id, ci);
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        return sel.cost ? s2 + parseFloat(sel.cost) : s2;
+      }, 0), 0);
 
     const snapshot = {
       id: (overwrite && origId) ? origId : newId(),
@@ -1382,19 +1352,21 @@ function App() {
   const removePart = (id) => setParts(parts.filter(p => p.id !== id));
 
   const addProcess = () => {
-    const name = newProcName.trim() || "工程" + (processes.length + 1);
+    const name = newProcName.trim() || `工程${processes.length + 1}`;
     setProcesses([...processes, { id: newId(), name }]);
     setNewProcName("");
   };
   const removeProcess = (id) => setProcesses(processes.filter(p => p.id !== id));
 
   // 集計
-  const totalCost = parts.reduce((sum, part) => {
-    sum + processes.reduce((s2, _, ci) => { const cell = getCell(part.id, ci); const sel = cell.suppliers.find(s => s.id === cell.selected); return sel.cost ? s2 + parseFloat(sel.cost) : s2; }, 0), 0);
-  }
-  const completedCells = parts.reduce((cnt, part) => {
+  const totalCost = parts.reduce((sum, part) =>
+    sum + processes.reduce((s2, _, ci) => {
+      const cell = getCell(part.id, ci);
+      const sel = cell.suppliers.find(s => s.id === cell.selected);
+      return sel.cost ? s2 + parseFloat(sel.cost) : s2;
+    }, 0), 0);
+  const completedCells = parts.reduce((cnt, part) =>
     cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
-  }
   const totalCells = parts.length * processes.length;
 
   const displayParts = filterCatId ? parts.filter(p => p.categoryId === filterCatId) : parts;
@@ -1403,7 +1375,7 @@ function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#020817", color: "#e2e8f0", fontFamily: "'Inter','Noto Sans JP',sans-serif" }}>
-      {/* - ヘッダー - */}
+      {/* ── ヘッダー ── */}
       <div style={{ borderBottom: "1px solid #1e293b", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "rgba(2,8,23,0.97)", backdropFilter: "blur(8px)", zIndex: 100, gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <div style={{ width: 24, height: 24, background: "linear-gradient(135deg,#6366f1,#0ea5e9)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}>⛓</div>
@@ -1470,7 +1442,7 @@ function App() {
 
       <div style={{ padding: "24px 22px 48px" }}>
 
-        {/* - テーマ一覧 - */}
+        {/* ── テーマ一覧 ── */}
         {view === "themes" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -1489,19 +1461,21 @@ function App() {
                 const tProcs = t.processes || [];
                 const tCats = t.categories || [];
                 const tMatrix = t.matrix || {};
-                const tCompleted = tParts.reduce((cnt, part) => {
-                  cnt + tProcs.filter((_, ci) => (tMatrix[(part.id) + "_" + (ci)].selected != null)).length, 0);
-                }
+                const tCompleted = tParts.reduce((cnt, part) =>
+                  cnt + tProcs.filter((_, ci) => (tMatrix[`${part.id}_${ci}`].selected != null)).length, 0);
                 const tTotal = tParts.length * tProcs.length;
-                const tCost = tParts.reduce((sum, part) => {
-                  sum + tProcs.reduce((s2, _, ci) => { const cell = tMatrix[(part.id) + "_" + (ci)]; const sel = cell.suppliers.find(s => s.id === cell.selected); return sel.cost ? s2 + parseFloat(sel.cost) : s2; }, 0), 0);
-                }
+                const tCost = tParts.reduce((sum, part) =>
+                  sum + tProcs.reduce((s2, _, ci) => {
+                    const cell = tMatrix[`${part.id}_${ci}`];
+                    const sel = cell.suppliers.find(s => s.id === cell.selected);
+                    return sel.cost ? s2 + parseFloat(sel.cost) : s2;
+                  }, 0), 0);
                 const isActive = t.theme.id === activeThemeId;
                 const prog = tTotal > 0 ? Math.round(tCompleted / tTotal * 100) : 0;
                 return (
                   <div key={t.theme.id}
                     onClick={() => { setActiveThemeId(t.theme.id); setView("matrix"); }}
-                    style={{ background: isActive ? "linear-gradient(135deg,#0c1a3a,#0a2a1a)" : "#0f172a", border: "2px solid " + (isActive ? "#6366f1" : "#1e293b"), borderRadius: 14, padding: "18px 20px", cursor: "pointer", transition: "border-color 0.2s", position: "relative" }}>
+                    style={{ background: isActive ? "linear-gradient(135deg,#0c1a3a,#0a2a1a)" : "#0f172a", border: `2px solid ${isActive ? "#6366f1" : "#1e293b"}`, borderRadius: 14, padding: "18px 20px", cursor: "pointer", transition: "border-color 0.2s", position: "relative" }}>
                     {isActive && (
                       <div style={{ position: "absolute", top: -10, left: 14, background: "linear-gradient(135deg,#6366f1,#0ea5e9)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "2px 10px", borderRadius: 20 }}>作業中</div>
                     )}
@@ -1521,14 +1495,14 @@ function App() {
                     {tCats.length > 0 && (
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
                         {tCats.map(cat => (
-                          <span key={cat.id} style={{ fontSize: 10, background: (cat.color || "#6366f1") + "22", color: cat.color || "#6366f1", border: "1px solid " + ((cat.color || "#6366f1")) + "44", borderRadius: 20, padding: "1px 8px" }}>{cat.name}</span>
+                          <span key={cat.id} style={{ fontSize: 10, background: (cat.color || "#6366f1") + "22", color: cat.color || "#6366f1", border: `1px solid ${(cat.color || "#6366f1")}44`, borderRadius: 20, padding: "1px 8px" }}>{cat.name}</span>
                         ))}
                       </div>
                     )}
                     {/* 進捗バー */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
-                        <div style={{ width: prog + "%", height: "100%", background: prog === 100 ? "#22c55e" : "#6366f1", borderRadius: 2, transition: "width 0.4s" }} />
+                        <div style={{ width: `${prog}%`, height: "100%", background: prog === 100 ? "#22c55e" : "#6366f1", borderRadius: 2, transition: "width 0.4s" }} />
                       </div>
                       <span style={{ fontSize: 10, color: prog === 100 ? "#22c55e" : "#475569", minWidth: 40 }}>{tCompleted}/{tTotal}</span>
                     </div>
@@ -1542,12 +1516,12 @@ function App() {
           </div>
         )}
 
-        {/* - テーマ設定 - */}
+        {/* ── テーマ設定 ── */}
         {view === "theme" && (
           <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} showConfirm={showConfirm} />
         )}
 
-        {/* - マトリクス - */}
+        {/* ── マトリクス ── */}
         {view === "matrix" && (
           <div>
             {/* ツールバー */}
@@ -1575,12 +1549,12 @@ function App() {
             {/* 大分類フィルタ */}
             <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
               <button onClick={() => setFilterCatId(null)}
-                style={{ background: filterCatId === null ? "#1e293b" : "transparent", border: "1px solid " + (filterCatId === null ? "#475569" : "#1e293b"), borderRadius: 20, color: filterCatId === null ? "#e2e8f0" : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>
+                style={{ background: filterCatId === null ? "#1e293b" : "transparent", border: `1px solid ${filterCatId === null ? "#475569" : "#1e293b"}`, borderRadius: 20, color: filterCatId === null ? "#e2e8f0" : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>
                 すべて
               </button>
               {categories.map(cat => (
                 <button key={cat.id} onClick={() => setFilterCatId(filterCatId === cat.id ? null : cat.id)}
-                  style={{ background: filterCatId === cat.id ? cat.color + "22" : "transparent", border: "1px solid " + (filterCatId === cat.id ? cat.color : "#1e293b"), borderRadius: 20, color: filterCatId === cat.id ? cat.color : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                  style={{ background: filterCatId === cat.id ? cat.color + "22" : "transparent", border: `1px solid ${filterCatId === cat.id ? cat.color : "#1e293b"}`, borderRadius: 20, color: filterCatId === cat.id ? cat.color : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, display: "inline-block" }} />
                   {cat.name}
                 </button>
@@ -1601,7 +1575,7 @@ function App() {
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "7px 10px" }}>
                           <span style={{ color: "#334155", fontSize: 12, marginRight: 4, flexShrink: 0 }}>⠿</span>
                           <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", flex: 1, textAlign: "center" }}>{proc.name}</span>
-                          <button onClick={() => showConfirm("「" + (proc.name) + "」を削除しますか？", () => removeProcess(proc.id))} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+                          <button onClick={() => showConfirm(`「${proc.name}」を削除しますか？`, () => removeProcess(proc.id))} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
                         </div>
                       </th>
                     ))}
@@ -1627,7 +1601,7 @@ function App() {
                             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ color: "#334155", fontSize: 13 }}>⠿</span>
                               <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", flex: 1 }}>{part.name}</span>
-                              <button onClick={() => showConfirm("「" + (part.name) + "」を削除しますか？", () => removePart(part.id))} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+                              <button onClick={() => showConfirm(`「${part.name}」を削除しますか？`, () => removePart(part.id))} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
                             </div>
                           </div>
                         </td>
@@ -1652,10 +1626,10 @@ function App() {
           </div>
         )}
 
-        {/* - フロービュー（マトリクス統合） - */}
+        {/* ── フロービュー（マトリクス統合） ── */}
         {view === "flow" && (
           <div>
-            {/* - ツールバー：部品・工程追加 - */}
+            {/* ── ツールバー：部品・工程追加 ── */}
             <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <select value={newPartCatId || categories[0].id || ""} onChange={e => setNewPartCatId(e.target.value)}
@@ -1674,12 +1648,12 @@ function App() {
               </div>
             </div>
 
-            {/* - 大分類タブ - */}
+            {/* ── 大分類タブ ── */}
             <div style={{ borderBottom: "2px solid #1e293b", marginBottom: 16 }}>
               <div style={{ display: "flex", gap: 0, overflowX: "auto" }}>
                 {/* すべてタブ */}
                 <button onClick={() => setFlowPartId("__all__")}
-                  style={{ background: "none", border: "none", borderBottom: "3px solid " + ((!flowPartId || flowPartId === "__all__") ? "#6366f1" : "transparent"), color: (!flowPartId || flowPartId === "__all__") ? "#e2e8f0" : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: (!flowPartId || flowPartId === "__all__") ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2 }}>
+                  style={{ background: "none", border: "none", borderBottom: `3px solid ${(!flowPartId || flowPartId === "__all__") ? "#6366f1" : "transparent"}`, color: (!flowPartId || flowPartId === "__all__") ? "#e2e8f0" : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: (!flowPartId || flowPartId === "__all__") ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2 }}>
                   すべて
                 </button>
                 {/* 大分類タブ */}
@@ -1689,7 +1663,7 @@ function App() {
                   const isActive = flowPartId === "cat:" + cat.id || catParts.some(p => p.id === flowPartId);
                   return (
                     <button key={cat.id} onClick={() => setFlowPartId("cat:" + cat.id)}
-                      style={{ background: "none", border: "none", borderBottom: "3px solid " + (isActive ? cat.color : "transparent"), color: isActive ? cat.color : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: isActive ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2, display: "flex", alignItems: "center", gap: 6 }}>
+                      style={{ background: "none", border: "none", borderBottom: `3px solid ${isActive ? cat.color : "transparent"}`, color: isActive ? cat.color : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: isActive ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
                       {cat.name}
                     </button>
@@ -1707,7 +1681,7 @@ function App() {
                   <div style={{ display: "flex", gap: 0, paddingLeft: 8, overflowX: "auto", borderTop: "1px solid #1e293b" }}>
                     {catParts.map(part => (
                       <button key={part.id} onClick={() => setFlowPartId(part.id)}
-                        style={{ background: "none", border: "none", borderBottom: "2px solid " + (flowPartId === part.id ? activeCat.color : "transparent"), color: flowPartId === part.id ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: flowPartId === part.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
+                        style={{ background: "none", border: "none", borderBottom: `2px solid ${flowPartId === part.id ? activeCat.color : "transparent"}`, color: flowPartId === part.id ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: flowPartId === part.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
                         {part.name}
                       </button>
                     ))}
@@ -1718,7 +1692,7 @@ function App() {
               })()}
             </div>
 
-            {/* - 工程管理バー（フロー図直上） - */}
+            {/* ── 工程管理バー（フロー図直上） ── */}
             <div style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 14px", marginBottom: 10, overflowX: "auto" }}>
               <div style={{ fontSize: 10, color: "#475569", marginBottom: 7 }}>工程の順番・削除</div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
@@ -1758,7 +1732,7 @@ function App() {
               </div>
             </div>
 
-            {/* - フロー図本体 - */}
+            {/* ── フロー図本体 ── */}
             {(() => {
               var flowPartIds;
               if (!flowPartId || flowPartId === "__all__") {
@@ -1781,7 +1755,7 @@ function App() {
               );
             })()}
 
-            {/* - 凡例 - */}
+            {/* ── 凡例 ── */}
             <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 10, color: "#475569" }}>
               {[{ color: "#22c55e", label: "採用確定" }, { color: "#f59e0b", label: "検討中" }, { color: "#1e293b", label: "未着手" }].map(l => (
                 <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -1792,16 +1766,16 @@ function App() {
           </div>
         )}
 
-        {/* - サマリー - */}
+        {/* ── サマリー ── */}
         {view === "summary" && (
           <div>
             <h2 style={{ color: "#f1f5f9", fontSize: 18, marginBottom: 4, fontWeight: 800 }}>{theme.name}</h2>
             <p style={{ color: "#475569", fontSize: 12, marginBottom: 20 }}>商流サマリー — 大分類別採用状況</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
               {[
-                { label: "累計コスト", value: totalCost ? "¥" + (totalCost.toLocaleString()) : "—", color: "#0ea5e9" },
-                { label: "採用確定セル", value: (completedCells) + " / " + (totalCells), color: "#22c55e" },
-                { label: "大分類 / 部品数", value: (categories.length) + "分類 / " + (parts.length) + "部品", color: "#a78bfa" },
+                { label: "累計コスト", value: totalCost ? `¥${totalCost.toLocaleString()}` : "—", color: "#0ea5e9" },
+                { label: "採用確定セル", value: `${completedCells} / ${totalCells}`, color: "#22c55e" },
+                { label: "大分類 / 部品数", value: `${categories.length}分類 / ${parts.length}部品`, color: "#a78bfa" },
               ].map(k => (
                 <div key={k.label} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: "14px 18px" }}>
                   <div style={{ fontSize: 10, color: "#64748b", marginBottom: 5 }}>{k.label}</div>
@@ -1814,9 +1788,12 @@ function App() {
             {categories.map(cat => {
               const catParts = parts.filter(p => p.categoryId === cat.id);
               if (catParts.length === 0) return null;
-              const catCost = catParts.reduce((s, part) => {
-                s + processes.reduce((s2, _, ci) => { const cell = getCell(part.id, ci); const sel = cell.suppliers.find(s => s.id === cell.selected); return sel.cost ? s2 + parseFloat(sel.cost) : s2; }, 0), 0);
-              }
+              const catCost = catParts.reduce((s, part) =>
+                s + processes.reduce((s2, _, ci) => {
+                  const cell = getCell(part.id, ci);
+                  const sel = cell.suppliers.find(s => s.id === cell.selected);
+                  return sel.cost ? s2 + parseFloat(sel.cost) : s2;
+                }, 0), 0);
               return (
                 <div key={cat.id} style={{ marginBottom: 24 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -1859,7 +1836,7 @@ function App() {
                                 );
                               })}
                               <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12, fontWeight: 700, color: partTotal ? "#0ea5e9" : "#334155" }}>
-                                {partTotal ? "¥" + (partTotal.toLocaleString()) : "—"}
+                                {partTotal ? `¥${partTotal.toLocaleString()}` : "—"}
                               </td>
                             </tr>
                           );
@@ -1873,7 +1850,7 @@ function App() {
           </div>
         )}
 
-        {/* - アーカイブ - */}
+        {/* ── アーカイブ ── */}
         {view === "archive" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
@@ -1910,7 +1887,7 @@ function App() {
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {archive.map(snap => {
                   const d = new Date(snap.archivedAt);
-                  const dateStr = (d.getFullYear()) + "/" + (d.getMonth()+1) + "/" + (d.getDate()) + " " + (d.getHours()) + ":" + (String(d.getMinutes()).padStart(2,'0'));
+                  const dateStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
                   const prog = snap.totalCells > 0 ? Math.round(snap.completedCells / snap.totalCells * 100) : 0;
                   return (
                     <div key={snap.id} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: "18px 20px" }}>
@@ -1926,14 +1903,14 @@ function App() {
                           {/* Progress bar */}
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <div style={{ flex: 1, height: 5, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
-                              <div style={{ width: prog + "%", height: "100%", background: prog === 100 ? "#22c55e" : "#0ea5e9", borderRadius: 3 }} />
+                              <div style={{ width: `${prog}%`, height: "100%", background: prog === 100 ? "#22c55e" : "#0ea5e9", borderRadius: 3 }} />
                             </div>
                             <span style={{ fontSize: 10, color: prog === 100 ? "#22c55e" : "#64748b", minWidth: 50 }}>{snap.completedCells}/{snap.totalCells} 確定 ({prog}%)</span>
                           </div>
                           {/* Category chips */}
                           <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                             {(snap.categories||[]).map(cat => (
-                              <span key={cat.id} style={{ fontSize: 10, background: cat.color + "22", color: cat.color, border: "1px solid " + (cat.color) + "44", borderRadius: 20, padding: "2px 8px" }}>{cat.name}</span>
+                              <span key={cat.id} style={{ fontSize: 10, background: cat.color + "22", color: cat.color, border: `1px solid ${cat.color}44`, borderRadius: 20, padding: "2px 8px" }}>{cat.name}</span>
                             ))}
                           </div>
                         </div>
@@ -1947,11 +1924,11 @@ function App() {
                             style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             🔄 上書き復元
                           </button>
-                          <button onClick={() => exportExcel(snap.theme, snap.categories, snap.parts, snap.processes, (partId, ci) => snap.matrix.[(partId) + "_" + (ci)] || { suppliers: [], selected: null })}
+                          <button onClick={() => exportExcel(snap.theme, snap.categories, snap.parts, snap.processes, (partId, ci) => snap.matrix.[`${partId}_${ci}`] || { suppliers: [], selected: null })}
                             style={{ background: "#14532d", border: "1px solid #22c55e33", borderRadius: 7, color: "#22c55e", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             📊 Excel
                           </button>
-                          <button onClick={() => showConfirm("「" + (snap.theme.name) + "」を削除しますか？", () => deleteArchiveItem(snap.id))}
+                          <button onClick={() => showConfirm(`「${snap.theme.name}」を削除しますか？`, () => deleteArchiveItem(snap.id))}
                             style={{ background: "none", border: "1px solid #334155", borderRadius: 7, color: "#475569", padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>
                             🗑 削除
                           </button>
@@ -2002,5 +1979,3 @@ function App() {
 
 const root=ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
-  </script>
-</body></html>
