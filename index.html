@@ -1044,20 +1044,27 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
                             var isWin = !isSel && suppliers.length > 1 && score === maxNonSelScore && score > 0;
                             var sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
 
-                            // ref: 採用カード → 採用矢印用、検討カード → 検討点線用、全カード → 合流線用（セル単位で代表1つ）
+                            // ref: 採用カード → 採用矢印用＋合流線用、採用なし時は先頭カードを合流線用に
                             var _sId = s.id;
                             var _ci = ci;
                             var _partId = part.id;
                             var _isSel = isSel;
                             var _isWin = isWin;
+                            var _si = si;
+                            var _hasSelected = !!selected;
                             var refFn = function(el) {
                               if (!el) return;
-                              // 採用カード: 採用矢印の起点/終点
-                              if (_isSel) nodeRefs.current[_partId + "_" + _ci] = el;
-                              // 検討カード: 検討点線用
+                              // 採用カード: 採用矢印の起点/終点 + 合流線のセル代表
+                              if (_isSel) {
+                                nodeRefs.current[_partId + "_" + _ci] = el;
+                                nodeRefs.current["cell_" + _partId + "_" + _ci] = el;
+                              }
+                              // 採用なし時: 先頭カードのみを合流線のセル代表にする
+                              if (!_hasSelected && _si === 0) {
+                                nodeRefs.current["cell_" + _partId + "_" + _ci] = el;
+                              }
+                              // 検討カード: 検討点線用（採用でなく最高スコアのもの）
                               if (_isWin) nodeRefs.current["win_" + _partId + "_" + _ci + "_" + _sId] = el;
-                              // 全カード: 合流線のセル代表（最初の1枚で上書き、採用があれば採用が最後に上書き）
-                              nodeRefs.current["cell_" + _partId + "_" + _ci] = el;
                             };
 
                             // 背景・枠色
