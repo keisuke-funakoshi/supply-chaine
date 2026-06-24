@@ -18,7 +18,7 @@
     }
     window.onerror=function(msg,src,line,col,err){
       document.body.style.background='#fff';
-      document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap">'+msg+'\nLine:'+line+'</div>';
+      document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap">'+msg+'\nLine:'+line+'\n'+(err&&err.stack?err.stack:'')+'</div>';
     };
   </script>
 </head><body>
@@ -27,7 +27,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script type="text/babel" data-presets="env,react">
+  <script type="text/babel" data-presets="react">
 const {useState,useRef,useCallback,useEffect,useMemo}=React;
 // - ユーティリティ -
 const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
@@ -37,9 +37,9 @@ const newId = () => "id" + (uid++);
 function scoreSupplier(supplier, allSuppliers) {
   const parse = (v) => parseFloat(v) || 0;
   const vals = (key) => allSuppliers.map((s) => parse(s[key])).filter(Boolean);
-  const norm = (val, arr, inv = false) => {
+  const norm = function(val, arr, inv) { if (inv === undefined) inv = false;
     if (!arr.length || !val) return 0;
-    const [mn, mx] = [Math.min(...arr), Math.max(...arr)];
+    var _tmp=[Math.min.apply(null, arr), Math.max.apply(null, arr)]; var mn=_tmp[0], mx=_tmp[1];
     if (mx === mn) return 100;
     const n = ((val - mn) / (mx - mn)) * 100;
     return Math.round(inv ? 100 - n : n);
@@ -61,7 +61,7 @@ function useDragSort(items, setItems) {
       e.preventDefault();
       if (dragIdx.current === null || dragIdx.current === i) return;
       const next = [...items];
-      const [m] = next.splice(dragIdx.current, 1);
+      var m = (next.splice(dragIdx.current, 1))[0];
       next.splice(i, 0, m);
       dragIdx.current = i;
       setItems(next);
