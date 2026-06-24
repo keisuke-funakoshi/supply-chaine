@@ -722,7 +722,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
     if (!containerRef.current) return;
     var cont = containerRef.current;
 
-    // 部品間合流線（合流元/先は採用優先、なければ先頭カード）
+    // 部品間合流線（採用優先、なければ検討、なければ候補、なければ先頭）
     var lines = crossLinks.map(function(link) {
       var fr = getElPos(cont, link.fromPartId, link.fromProcIdx, "any");
       var tr = getElPos(cont, link.toPartId, link.toProcIdx, "any");
@@ -751,38 +751,42 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
     });
     setArrowLines(arrows);
 
-    // 検討→検討 グレー点線（隣接工程間）
-    var wLines = [];
+    // 各工程の「代表種別」を決定して線を引く
+    // 優先順: adopted > win > cand > none
+    // 同種の隣接工程ペアのみ線を引く（種別が変わる場合は線なし）
+    var wLines = [], cLines = [];
     displayParts.forEach(function(part) {
-      var winCols = [];
+      // 各工程の代表を収集
+      var colReps = [];
       processes.forEach(function(proc, ci) {
-        var fr = getElPos(cont, part.id, ci, "win");
-        if (fr) winCols.push({ ci: ci, fr: fr });
+        var cell = getCell(part.id, ci);
+        if (!cell || !cell.suppliers || cell.suppliers.length === 0) return;
+        var adopted = cell.selected;
+        if (adopted) { colReps.push({ ci: ci, type: "adopted" }); return; }
+        // 採用なし: win優先、なければcand
+        var winEl = cont.querySelector('[data-node="' + part.id + '_' + ci + '_win"]');
+        if (winEl) { colReps.push({ ci: ci, type: "win" }); return; }
+        var candEl = cont.querySelector('[data-node="' + part.id + '_' + ci + '_cand"]');
+        if (candEl) { colReps.push({ ci: ci, type: "cand" }); return; }
       });
-      for (var i = 0; i < winCols.length - 1; i++) {
-        var a = winCols[i], b = winCols[i+1];
-        if (b.ci - a.ci !== 1) continue;
-        wLines.push({ id: "win_"+part.id+"_"+a.ci+"_"+b.ci,
-          x1: a.fr.right, y1: a.fr.top+a.fr.height/2, x2: b.fr.left, y2: b.fr.top+b.fr.height/2 });
+
+      // 隣接ペアで同種同士のみ線を引く
+      for (var i = 0; i < colReps.length - 1; i++) {
+        var a = colReps[i], b = colReps[i+1];
+        if (b.ci - a.ci !== 1) continue;        // 隣接工程のみ
+        if (a.type === "adopted" || b.type === "adopted") continue; // 採用は緑線で処理済み
+        if (a.type !== b.type) continue;         // 種別が異なる場合は線なし
+        var frPos = getElPos(cont, part.id, a.ci, a.type);
+        var trPos = getElPos(cont, part.id, b.ci, b.type);
+        if (!frPos || !trPos) continue;
+        var lineObj = { id: a.type+"_"+part.id+"_"+a.ci+"_"+b.ci,
+          x1: frPos.right, y1: frPos.top+frPos.height/2,
+          x2: trPos.left,  y2: trPos.top+trPos.height/2 };
+        if (a.type === "win")  wLines.push(lineObj);
+        if (a.type === "cand") cLines.push(lineObj);
       }
     });
     setWinLines(wLines);
-
-    // 候補→候補 黄色点線（隣接工程間）
-    var cLines = [];
-    displayParts.forEach(function(part) {
-      var candCols = [];
-      processes.forEach(function(proc, ci) {
-        var fr = getElPos(cont, part.id, ci, "cand");
-        if (fr) candCols.push({ ci: ci, fr: fr });
-      });
-      for (var i = 0; i < candCols.length - 1; i++) {
-        var a = candCols[i], b = candCols[i+1];
-        if (b.ci - a.ci !== 1) continue;
-        cLines.push({ id: "cand_"+part.id+"_"+a.ci+"_"+b.ci,
-          x1: a.fr.right, y1: a.fr.top+a.fr.height/2, x2: b.fr.left, y2: b.fr.top+b.fr.height/2 });
-      }
-    });
     setCandLines(cLines);
   }
 
