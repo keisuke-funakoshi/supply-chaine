@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
+<html lang="ja"><head>
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>商流シミュレーター</title>
   <meta name="theme-color" content="#6366f1"/>
@@ -12,14 +11,13 @@
   <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#020817}</style>
   <script>
     if('serviceWorker' in navigator){
-      navigator.serviceWorker.getRegistrations().then(function(regs){regs.forEach(function(r){r.unregister();});});
-      caches.keys().then(function(keys){keys.forEach(function(k){caches.delete(k);});});
+      navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister();});});
+      caches.keys().then(function(k){k.forEach(function(x){caches.delete(x);});});
       window.addEventListener('load',function(){navigator.serviceWorker.register('./sw.js');});
     }
     window.onerror=function(msg,src,line){document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;background:#fff;white-space:pre">Error: '+msg+'\nLine: '+line+'</div>';};
   </script>
-</head>
-<body>
+</head><body>
   <div id="root"></div>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -663,7 +661,7 @@ function saveCrossLinks(data) { localStorage.setItem(CROSS_LINKS_KEY, JSON.strin
 
 const FNODE_W = 180, FNODE_GAP = 40, FLABEL_W = 148;
 
-function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId }) {
+function FlowView({ partIds, parts, setParts, removePart, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId, showConfirm }) {
   var displayParts = partIds === "__all__" ? parts : parts.filter(function(p) { return partIds.indexOf(p.id) >= 0; });
   var [crossLinks, setCrossLinksRaw] = useState(function() {
     var all = loadCrossLinks(); return all[themeId] || [];
@@ -684,42 +682,64 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
   var [arrowLines, setArrowLines] = useState([]);
 
   // DOM計測でSVG線座標を更新
-  // getBoundingClientRect()はビューポート基準なので、コンテナのtop/leftを引くだけでOK
+  // getRelPos: 要素のコンテナ基準の座標を返す（スクロール対応）
+  function getRelPos(el, container) {
+    var eRect = el.getBoundingClientRect();
+    var cRect = container.getBoundingClientRect();
+    // コンテナのスクロール量も加算
+    var scrollLeft = container.scrollLeft || 0;
+    var scrollTop  = container.scrollTop  || 0;
+    return {
+      left:   eRect.left   - cRect.left + scrollLeft,
+      right:  eRect.right  - cRect.left + scrollLeft,
+      top:    eRect.top    - cRect.top  + scrollTop,
+      bottom: eRect.bottom - cRect.top  + scrollTop,
+      width:  eRect.width,
+      height: eRect.height,
+    };
+  }
+
   function recalcLines() {
     if (!containerRef.current) return;
-    var cr = containerRef.current.getBoundingClientRect();
+    var cont = containerRef.current;
 
     // 部品間合流線
     var lines = crossLinks.map(function(link) {
       var fromEl = nodeRefs.current[link.fromPartId + "_" + link.fromProcIdx];
       var toEl   = nodeRefs.current[link.toPartId   + "_" + link.toProcIdx];
       if (!fromEl || !toEl) return null;
-      var fr = fromEl.getBoundingClientRect();
-      var tr = toEl.getBoundingClientRect();
+      var fr = getRelPos(fromEl, cont);
+      var tr = getRelPos(toEl,   cont);
       return { id: link.id,
-        x1: fr.right  - cr.left, y1: fr.top + fr.height / 2 - cr.top,
-        x2: tr.left   - cr.left, y2: tr.top + tr.height / 2 - cr.top };
+        x1: fr.right,            y1: fr.top + fr.height / 2,
+        x2: tr.left,             y2: tr.top + tr.height / 2 };
     }).filter(Boolean);
     setSvgLines(lines);
 
-    // 工程間採用矢印
+    // 工程間採用矢印（スキップ対応）
     var arrows = [];
     displayParts.forEach(function(part) {
+      var adoptedCols = [];
       processes.forEach(function(proc, ci) {
-        if (ci === 0) return;
-        var prevEl = nodeRefs.current[part.id + "_" + (ci-1)];
-        var currEl = nodeRefs.current[part.id + "_" + ci];
-        if (!prevEl || !currEl) return;
-        var prevCell = getCell(part.id, ci-1);
-        var currCell = getCell(part.id, ci);
-        var adopted  = prevCell && prevCell.selected && currCell && currCell.selected;
-        var pr  = prevEl.getBoundingClientRect();
-        var cr2 = currEl.getBoundingClientRect();
-        arrows.push({ id: part.id+"_arr_"+ci,
-          x1: pr.right  - cr.left, y1: pr.top  + pr.height  / 2 - cr.top,
-          x2: cr2.left  - cr.left, y2: cr2.top + cr2.height / 2 - cr.top,
-          adopted: adopted });
+        var cell = getCell(part.id, ci);
+        if (cell && cell.selected) adoptedCols.push(ci);
       });
+      for (var i = 0; i < adoptedCols.length - 1; i++) {
+        var fromCi = adoptedCols[i];
+        var toCi   = adoptedCols[i + 1];
+        var fromEl = nodeRefs.current[part.id + "_" + fromCi];
+        var toEl   = nodeRefs.current[part.id + "_" + toCi];
+        if (!fromEl || !toEl) continue;
+        var pr  = getRelPos(fromEl, cont);
+        var cr2 = getRelPos(toEl,   cont);
+        arrows.push({
+          id: part.id + "_arr_" + fromCi + "_" + toCi,
+          x1: pr.right,            y1: pr.top  + pr.height  / 2,
+          x2: cr2.left,            y2: cr2.top + cr2.height / 2,
+          adopted: true,
+          skip: (toCi - fromCi) > 1,
+        });
+      }
     });
     setArrowLines(arrows);
   }
@@ -752,7 +772,7 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
   );
 
   return (
-    <div ref={containerRef} style={{ overflowX: "auto", position: "relative" }}>
+    <div ref={containerRef} style={{ overflowX: "auto", overflowY: "visible", position: "relative" }}>
       {/* 部品間合流線ダイアログ */}
       {linkDialog && (
         <div style={{ background: "#0f172a", border: "1px solid #6366f1", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
@@ -785,7 +805,7 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
 
       {/* SVGオーバーレイ：工程間矢印 + 部品間合流線 */}
       {(svgLines.length > 0 || arrowLines.length > 0) && (
-        <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible" }}>
+        <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible", minWidth: "100%", minHeight: "100%" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
@@ -797,17 +817,26 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
               <path d="M0,0 L7,3.5 L0,7 Z" fill="#334155"/>
             </marker>
           </defs>
-          {/* 工程間矢印 */}
+          {/* 工程間矢印（スキップは曲線） */}
           {arrowLines.map(function(a) {
+            var mx = (a.x1 + a.x2) / 2;
+            var my = Math.min(a.y1, a.y2) - 30;
+            var pathD = a.skip
+              ? "M" + a.x1 + "," + a.y1 + " Q" + mx + "," + my + " " + a.x2 + "," + a.y2
+              : null;
             return (
               <g key={a.id}>
-                {a.adopted && <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={7} opacity={0.12}/>}
-                <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                  stroke={a.adopted ? "#22c55e" : "#334155"}
-                  strokeWidth={a.adopted ? 2.5 : 1.5}
-                  strokeDasharray={a.adopted ? "none" : "5,3"}
-                  markerEnd={a.adopted ? "url(#gr-arrow)" : "url(#gy-arrow)"}
-                  opacity={a.adopted ? 1 : 0.4}/>
+                {a.adopted && !a.skip && <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={7} opacity={0.12}/>}
+                {a.skip ? (
+                  <path d={pathD} fill="none"
+                    stroke="#22c55e" strokeWidth={2.5}
+                    strokeDasharray="6,3"
+                    markerEnd="url(#gr-arrow)" opacity={0.9}/>
+                ) : (
+                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+                    stroke="#22c55e" strokeWidth={2.5}
+                    markerEnd="url(#gr-arrow)" opacity={1}/>
+                )}
               </g>
             );
           })}
@@ -860,12 +889,39 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
         var targetCost = targetCostMap[part.id] || "";
         var overBudget = targetCost && adoptedCost > parseFloat(targetCost);
 
+        var partIdx = parts.indexOf(part);
+
+        function movePart(dir) {
+          var idx = parts.indexOf(part);
+          var target = idx + dir;
+          if (target < 0 || target >= parts.length) return;
+          var next = parts.slice();
+          var tmp = next[idx]; next[idx] = next[target]; next[target] = tmp;
+          setParts(next);
+        }
+
         return (
           <div key={part.id} style={{ display: "flex", marginBottom: 10, alignItems: "flex-start", position: "relative", zIndex: 1 }}>
             {/* 部品ラベル */}
             <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid " + (cat ? cat.color + "44" : "#1e293b"), borderRadius: 10, padding: "10px 10px", boxSizing: "border-box" }}>
               {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 3 }}>{cat.name}</div>}
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#f1f5f9", marginBottom: 6 }}>{part.name}</div>
+              {/* 部品名（インライン編集） */}
+              <input value={part.name}
+                onChange={function(e) {
+                  var next = parts.map(function(p) { return p.id === part.id ? Object.assign({}, p, { name: e.target.value }) : p; });
+                  setParts(next);
+                }}
+                style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #334155", color: "#f1f5f9", fontSize: 12, fontWeight: 800, outline: "none", marginBottom: 6, padding: "1px 0", boxSizing: "border-box" }}
+              />
+              {/* 上下移動・削除ボタン */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                <button onClick={function() { movePart(-1); }}
+                  style={{ flex: 1, background: partIdx === 0 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: partIdx === 0 ? "#1e293b" : "#64748b", fontSize: 11, padding: "2px 0", cursor: partIdx === 0 ? "default" : "pointer" }}>↑</button>
+                <button onClick={function() { movePart(1); }}
+                  style={{ flex: 1, background: partIdx === parts.length - 1 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: partIdx === parts.length - 1 ? "#1e293b" : "#64748b", fontSize: 11, padding: "2px 0", cursor: partIdx === parts.length - 1 ? "default" : "pointer" }}>↓</button>
+                <button onClick={function() { showConfirm("「" + part.name + "」を削除しますか？", function() { removePart(part.id); }); }}
+                  style={{ width: 26, background: "#1e293b", border: "1px solid #ef444433", borderRadius: 4, color: "#ef4444", fontSize: 11, padding: "2px 0", cursor: "pointer" }}>×</button>
+              </div>
               <div style={{ fontSize: 9, color: "#475569", marginBottom: 2 }}>目標コスト</div>
               <input type="number" value={targetCost}
                 onChange={function(e) { setTargetCostMap(function(prev) { var n = Object.assign({}, prev); n[part.id] = e.target.value; return n; }); }}
@@ -905,28 +961,67 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
                         <div>
                           {suppliers.map(function(s, si) {
                             var isSel = s.id === selected;
+                            // candidates: cell.candidates は候補IDの配列
+                            var candidates = cell && cell.candidates ? cell.candidates : [];
+                            var isCandidate = candidates.indexOf(s.id) >= 0;
+                            // 状態: 採用 > 候補 > なし
+                            // クリックで: なし→候補→採用→なし
+                            var status = isSel ? "adopted" : isCandidate ? "candidate" : "none";
                             var score = scores[si];
                             var isWin = suppliers.length > 1 && score === maxScore && score > 0;
                             var sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
-                            var procName = proc;
+
+                            // 採用サプライヤーにrefを付ける（矢印線用）
+                            var refFn = isSel ? function(el) { if (el) nodeRefs.current[part.id + "_" + ci] = el; } : null;
+
+                            // 背景・枠色
+                            var bg = isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)"
+                                   : isCandidate ? "#0f1a2e"
+                                   : "#0a1220";
+                            var borderColor = isSel ? "#0ea5e9"
+                                           : isCandidate ? "#334155"
+                                           : "#1e293b";
+                            var borderW = isSel ? 2 : 1;
+                            var nameColor = isSel ? "#f1f5f9" : isCandidate ? "#cbd5e1" : "#475569";
+
                             return (
                               <div key={s.id}
-                                ref={function(el) { if (el) nodeRefs.current[part.id + "_" + ci] = el; }}
+                                ref={refFn}
                                 onClick={function() {
-                                  var newSel = isSel ? null : s.id;
-                                  setCell(part.id, ci, Object.assign({}, cell, { selected: newSel }));
+                                  var newCandidates = candidates.slice();
+                                  var newSelected = selected;
+                                  if (status === "none") {
+                                    // なし → 候補
+                                    newCandidates.push(s.id);
+                                    newSelected = selected; // 採用は変えない
+                                  } else if (status === "candidate") {
+                                    // 候補 → 採用（他の採用を解除）
+                                    newSelected = s.id;
+                                  } else {
+                                    // 採用 → なし（候補からも外す）
+                                    newSelected = null;
+                                    newCandidates = newCandidates.filter(function(id) { return id !== s.id; });
+                                  }
+                                  setCell(part.id, ci, Object.assign({}, cell, { selected: newSelected, candidates: newCandidates }));
                                 }}
-                                style={{ marginBottom: 4, minHeight: 64, background: isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)" : isWin ? "#0f2a1a" : "#0a1220", border: (isSel ? 2 : 1) + "px solid " + (isSel ? "#0ea5e9" : isWin ? "#22c55e" : "#1e293b"), borderRadius: 9, padding: "8px 10px", cursor: "pointer", position: "relative", userSelect: "none" }}>
-                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>推奨</div>}
+                                style={{ marginBottom: 4, minHeight: 64, background: bg, border: borderW + "px solid " + borderColor, borderRadius: 9, padding: "8px 10px", cursor: "pointer", position: "relative", userSelect: "none", opacity: status === "none" ? 0.5 : 1 }}>
+                                {/* 状態バッジ */}
                                 {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
-                                <div style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: "50%", background: sc }}/>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? "#f1f5f9" : "#94a3b8", paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>{s.name || ("S" + (si+1))}</div>
-                                <div style={{ display: "flex", gap: 6 }}>
+                                {isCandidate && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#334155", color: "#94a3b8", fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>候補</div>}
+                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, right: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>推奨</div>}
+                                {/* 状態インジケーター */}
+                                <div style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: "50%", background: isSel ? "#0ea5e9" : isCandidate ? "#64748b" : "#1e293b" }}/>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: nameColor, paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>{s.name || ("S" + (si+1))}</div>
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                                   {s.cost && <span style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(s.cost).toLocaleString()}</span>}
                                   {s.leadTime && <span style={{ fontSize: 10, color: "#64748b" }}>LT:{s.leadTime}日</span>}
                                 </div>
                                 <div style={{ marginTop: 5, height: 3, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
                                   <div style={{ width: score + "%", height: "100%", background: sc, borderRadius: 2 }}/>
+                                </div>
+                                {/* タップヒント */}
+                                <div style={{ position: "absolute", bottom: 4, right: 6, fontSize: 8, color: "#334155" }}>
+                                  {status === "none" ? "tap→候補" : status === "candidate" ? "tap→採用" : "tap→解除"}
                                 </div>
                               </div>
                             );
@@ -955,9 +1050,9 @@ function FlowView({ partIds, parts, categories, processes, getCell, setCell, tar
 
       {/* 凡例 */}
       <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 10, color: "#475569", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#22c55e" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #22c55e", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>採用ルート</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#1e293b" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #1e293b", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>未確定</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#22c55e" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #22c55e", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>採用ルート（緑線）</div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#6366f1" }}/>部品間合流線（🔗で追加、×で削除）</div>
+        <div style={{ color: "#334155" }}>カードをタップ: なし → 候補 → 採用 → なし</div>
       </div>
     </div>
   );
@@ -1604,6 +1699,9 @@ function App() {
                 <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
                   
                   themeId={activeThemeId}
+                  setParts={setParts}
+                  removePart={removePart}
+                  showConfirm={showConfirm}
                   />
               </div>
             ) : (
@@ -1612,6 +1710,9 @@ function App() {
                   <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
                   
                   themeId={activeThemeId}
+                  setParts={setParts}
+                  removePart={removePart}
+                  showConfirm={showConfirm}
                   />
                 </div>
               )
@@ -1842,5 +1943,4 @@ function App() {
 const root=ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
   </script>
-</body>
-</html>
+</body></html>
