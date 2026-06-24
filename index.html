@@ -1340,12 +1340,19 @@ function App() {
   const partDrag = useDragSort(parts, setParts);
   const procDrag = useDragSort(processes, setProcesses);
 
+  // 実効大分類ID：newPartCatIdが空 or 存在しないカテゴリなら先頭に fallback
+  const resolvedPartCatId = (newPartCatId && categories.find(c => c.id === newPartCatId))
+    ? newPartCatId
+    : categories[0]?.id ?? "";
+
   const addPart = () => {
     const name = newPartName.trim();
-    const catId = newPartCatId || categories[0]?.id;
+    const catId = resolvedPartCatId;
     if (!name || !catId) return;
     setParts([...parts, { id: newId(), categoryId: catId, name }]);
     setNewPartName("");
+    // 追加後も選択中の大分類を維持（stateを確定値にセット）
+    setNewPartCatId(catId);
   };
   const removePart = (id) => setParts(parts.filter(p => p.id !== id));
 
@@ -1526,7 +1533,7 @@ function App() {
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <select
-                  value={newPartCatId || categories[0]?.id || ""}
+                  value={resolvedPartCatId}
                   onChange={e => setNewPartCatId(e.target.value)}
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}
                 >
@@ -1630,7 +1637,7 @@ function App() {
             {/* ── ツールバー：部品・工程追加 ── */}
             <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <select value={newPartCatId || categories[0]?.id || ""} onChange={e => setNewPartCatId(e.target.value)}
+                <select value={resolvedPartCatId} onChange={e => setNewPartCatId(e.target.value)}
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -1660,7 +1667,7 @@ function App() {
                   if (!catParts.length) return null;
                   const isActive = flowPartId === "cat:" + cat.id || catParts.some(p => p.id === flowPartId);
                   return (
-                    <button key={cat.id} onClick={() => setFlowPartId("cat:" + cat.id)}
+                    <button key={cat.id} onClick={() => { setFlowPartId("cat:" + cat.id); setNewPartCatId(cat.id); }}
                       style={{ background: "none", border: "none", borderBottom: `3px solid ${isActive ? cat.color : "transparent"}`, color: isActive ? cat.color : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: isActive ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
                       {cat.name}
