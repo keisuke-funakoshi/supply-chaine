@@ -17,7 +17,7 @@
     }
     window.onerror=function(msg,src,line,col,err){
       if(msg==='Script error.'&&line===0){
-        document.getElementById('root').innerHTML='<div style="color:red;padding:20px;background:#fff;font-family:sans-serif"><b>ライブラリ読み込みエラー</b><br>インターネット接続を確認してページを再読み込みしてください。<br><button onclick="location.reload(true)" style="margin-top:12px;padding:8px 16px;cursor:pointer">再読み込み</button></div>';
+        document.getElementById('root').innerHTML='<div style="color:red;padding:20px;background:#fff;font-family:sans-serif"><b>読み込みエラー</b><br>再読み込みしてください。<br><button onclick="location.reload(true)" style="margin-top:12px;padding:8px 16px;cursor:pointer">再読み込み</button></div>';
       } else {
         document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;background:#fff;white-space:pre">Error: '+msg+'\nLine: '+line+'</div>';
       }
@@ -25,16 +25,11 @@
   </script>
 </head><body>
   <div id="root"><div style="color:#fff;padding:40px;text-align:center">読み込み中...</div></div>
-
-  <!-- React 18 -->
   <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
   <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <!-- Babel standalone -->
   <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.10/babel.min.js"></script>
-  <!-- SheetJS -->
   <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <script type="text/babel" data-presets="env,react">
+  <script type="text/babel" data-presets="react">
 const {useState,useRef,useCallback,useEffect,useMemo}=React;
 // ─── ユーティリティ ───────────────────────────────────────────────────
 const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
@@ -158,11 +153,11 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
       const row = [part.name];
       processes.forEach((_, ci) => {
         const cell = getCell(part.id, ci);
-        const sel = cell.suppliers?.find(s => s.id === cell.selected);
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
         if (sel) {
           row.push(sel.name + "\n¥" + parseFloat(sel.cost || 0).toLocaleString() + "  LT:" + (sel.leadTime || "?") + "日");
         } else {
-          const count = cell.suppliers?.length || 0;
+          const count = cell.suppliers.length || 0;
           row.push(count > 0 ? `(${count}社検討中)` : "");
         }
         if (ci < processes.length - 1) row.push("→");
@@ -203,8 +198,8 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
       const row = [part.name];
       processes.forEach((_, ci) => {
         const cell = getCell(part.id, ci);
-        const sel = cell.suppliers?.find(s => s.id === cell.selected);
-        const cost = sel?.cost ? parseFloat(sel.cost) : 0;
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        const cost = sel.cost ? parseFloat(sel.cost) : 0;
         total += cost;
         row.push(cost ? cost : "");
       });
@@ -236,9 +231,9 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
       const row = [pi === 0 ? cat.name : "", part.name];
       processes.forEach((_, ci) => {
         const cell = getCell(part.id, ci);
-        const sel = cell.suppliers?.find(s => s.id === cell.selected);
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
         const cost = sel ? `${sel.name} ¥${parseFloat(sel.cost || 0).toLocaleString()}` : "";
-        const c = sel?.cost ? parseFloat(sel.cost) : 0;
+        const c = sel.cost ? parseFloat(sel.cost) : 0;
         total += c;
         row.push(cost);
       });
@@ -575,8 +570,8 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
 
 // ─── セル詳細モーダル ─────────────────────────────────────────────────
 function CellModal({ partName, processName, cellData, onUpdate, onClose, showConfirm }) {
-  const suppliers = cellData?.suppliers || [];
-  const selected = cellData?.selected ?? null;
+  const suppliers = cellData.suppliers || [];
+  const selected = cellData.selected || null;
 
   const addSupplier = () =>
     onUpdate({ ...cellData, suppliers: [...suppliers, { id: newId(), name: "", cost: "", leadTime: "", quality: "", moq: "", notes: "" }] });
@@ -589,7 +584,7 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
 
   const scores = Object.fromEntries(suppliers.map(s => [s.id, scoreSupplier(s, suppliers)]));
   const maxScore = Math.max(...Object.values(scores), 0);
-  const winnerId = suppliers.find(s => scores[s.id] === maxScore && maxScore > 0 && suppliers.length > 1)?.id;
+  const winnerId = suppliers.find(s => scores[s.id] === maxScore && maxScore > 0 && suppliers.length > 1).id;
 
   const { onDragStart, onDragOver, onDragEnd } = useDragSort(suppliers, next => onUpdate({ ...cellData, suppliers: next }));
   const fields = [
@@ -665,8 +660,8 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
 
 // ─── マトリクスセル ───────────────────────────────────────────────────
 function MatrixCell({ cellData, onClick }) {
-  const suppliers = cellData?.suppliers || [];
-  const selected = cellData?.selected ?? null;
+  const suppliers = cellData.suppliers || [];
+  const selected = cellData.selected || null;
   const sel = suppliers.find(s => s.id === selected);
   const hasData = suppliers.length > 0;
   return (
@@ -1144,7 +1139,7 @@ function saveThemes(list) {
 function loadActiveId(themes) {
   const saved = localStorage.getItem(ACTIVE_KEY);
   if (saved && themes.find(t => t.theme.id === saved)) return saved;
-  return themes[0]?.theme.id ?? null;
+  return themes[0].theme.id || null;
 }
 
 // ─── メインアプリ ─────────────────────────────────────────────────────
@@ -1262,8 +1257,8 @@ function App() {
     const totalCostNow = parts.reduce((sum, part) =>
       sum + processes.reduce((s2, _, ci) => {
         const cell = getCell(part.id, ci);
-        const sel = cell.suppliers?.find(s => s.id === cell.selected);
-        return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        return sel.cost ? s2 + parseFloat(sel.cost) : s2;
       }, 0), 0);
     const snapshot = {
       id: newId(),
@@ -1312,7 +1307,7 @@ function App() {
   // 再編集テーマをアーカイブに保存（上書き or 別名）
   const saveEditedToArchive = (overwrite) => {
     const activeEntry = themes.find(t => t.theme.id === activeThemeId);
-    const origId = activeEntry?.originArchiveId;
+    const origId = activeEntry.originArchiveId;
 
     const completedCellsNow = parts.reduce((cnt, part) =>
       cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
@@ -1320,8 +1315,8 @@ function App() {
     const totalCostNow = parts.reduce((sum, part) =>
       sum + processes.reduce((s2, _, ci) => {
         const cell = getCell(part.id, ci);
-        const sel = cell.suppliers?.find(s => s.id === cell.selected);
-        return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+        const sel = cell.suppliers.find(s => s.id === cell.selected);
+        return sel.cost ? s2 + parseFloat(sel.cost) : s2;
       }, 0), 0);
 
     const snapshot = {
@@ -1370,7 +1365,7 @@ function App() {
 
   const addPart = () => {
     const name = newPartName.trim();
-    const catId = newPartCatId || categories[0]?.id;
+    const catId = newPartCatId || categories[0].id;
     if (!name || !catId) return;
     // 同一名・同一大分類の重複防止
     const exists = parts.some(p => p.name === name && p.categoryId === catId);
@@ -1398,8 +1393,8 @@ function App() {
   const totalCost = parts.reduce((sum, part) =>
     sum + processes.reduce((s2, _, ci) => {
       const cell = getCell(part.id, ci);
-      const sel = cell.suppliers?.find(s => s.id === cell.selected);
-      return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+      const sel = cell.suppliers.find(s => s.id === cell.selected);
+      return sel.cost ? s2 + parseFloat(sel.cost) : s2;
     }, 0), 0);
   const completedCells = parts.reduce((cnt, part) =>
     cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
@@ -1447,7 +1442,7 @@ function App() {
             </>
           )}
           {/* 再編集テーマの場合: 上書き・別名保存ボタン */}
-          {themes.find(t => t.theme.id === activeThemeId)?.originArchiveId && (
+          {themes.find(t => t.theme.id === activeThemeId).originArchiveId && (
             <>
               <button onClick={() => showConfirm("元のアーカイブを上書き保存しますか？", () => saveEditedToArchive(true))}
                 style={{ background: "#0f2a1a", border: "1px solid #22c55e55", borderRadius: 7, color: "#22c55e", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -1498,13 +1493,13 @@ function App() {
                 const tCats = t.categories || [];
                 const tMatrix = t.matrix || {};
                 const tCompleted = tParts.reduce((cnt, part) =>
-                  cnt + tProcs.filter((_, ci) => (tMatrix[`${part.id}_${ci}`]?.selected != null)).length, 0);
+                  cnt + tProcs.filter((_, ci) => (tMatrix[`${part.id}_${ci}`].selected != null)).length, 0);
                 const tTotal = tParts.length * tProcs.length;
                 const tCost = tParts.reduce((sum, part) =>
                   sum + tProcs.reduce((s2, _, ci) => {
                     const cell = tMatrix[`${part.id}_${ci}`];
-                    const sel = cell?.suppliers?.find(s => s.id === cell?.selected);
-                    return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+                    const sel = cell.suppliers.find(s => s.id === cell.selected);
+                    return sel.cost ? s2 + parseFloat(sel.cost) : s2;
                   }, 0), 0);
                 const isActive = t.theme.id === activeThemeId;
                 const prog = tTotal > 0 ? Math.round(tCompleted / tTotal * 100) : 0;
@@ -1564,7 +1559,7 @@ function App() {
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <select
-                  value={newPartCatId || categories[0]?.id || ""}
+                  value={newPartCatId || categories[0].id || ""}
                   onChange={e => setNewPartCatId(e.target.value)}
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}
                 >
@@ -1668,7 +1663,7 @@ function App() {
             {/* ── ツールバー：部品・工程追加 ── */}
             <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <select value={newPartCatId || categories[0]?.id || ""} onChange={e => setNewPartCatId(e.target.value)}
+                <select value={newPartCatId || categories[0].id || ""} onChange={e => setNewPartCatId(e.target.value)}
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -1709,7 +1704,7 @@ function App() {
               {/* 選択中の大分類内の部品タブ（2段目） */}
               {flowPartId && flowPartId !== "__all__" && (() => {
                 const activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
-                  : parts.find(p => p.id === flowPartId)?.categoryId;
+                  : parts.find(p => p.id === flowPartId).categoryId;
                 const activeCat = categories.find(c => c.id === activeCatId);
                 const catParts = parts.filter(p => p.categoryId === activeCatId);
                 if (!catParts.length || !activeCat) return null;
@@ -1721,7 +1716,7 @@ function App() {
                         {part.name}
                       </button>
                     ))}
-                    <button onClick={() => { setNewPartCatId(activeCatId); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }}
+                    <button onClick={() => { setNewPartCatId(activeCatId); setNewPartName(""); document.querySelector('#new-part-input').focus(); }}
                       style={{ background: "none", border: "none", color: "#334155", padding: "5px 8px", fontSize: 14, cursor: "pointer" }}>＋</button>
                   </div>
                 );
@@ -1827,8 +1822,8 @@ function App() {
               const catCost = catParts.reduce((s, part) =>
                 s + processes.reduce((s2, _, ci) => {
                   const cell = getCell(part.id, ci);
-                  const sel = cell.suppliers?.find(s => s.id === cell.selected);
-                  return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
+                  const sel = cell.suppliers.find(s => s.id === cell.selected);
+                  return sel.cost ? s2 + parseFloat(sel.cost) : s2;
                 }, 0), 0);
               return (
                 <div key={cat.id} style={{ marginBottom: 24 }}>
@@ -1850,15 +1845,15 @@ function App() {
                         {catParts.map(part => {
                           const partTotal = processes.reduce((s, _, ci) => {
                             const cell = getCell(part.id, ci);
-                            const sel = cell.suppliers?.find(s => s.id === cell.selected);
-                            return sel?.cost ? s + parseFloat(sel.cost) : s;
+                            const sel = cell.suppliers.find(s => s.id === cell.selected);
+                            return sel.cost ? s + parseFloat(sel.cost) : s;
                           }, 0);
                           return (
                             <tr key={part.id} style={{ borderBottom: "1px solid #0f172a" }}>
                               <td style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#94a3b8" }}>{part.name}</td>
                               {processes.map((_, ci) => {
                                 const cell = getCell(part.id, ci);
-                                const s = cell.suppliers?.find(sup => sup.id === cell.selected);
+                                const s = cell.suppliers.find(sup => sup.id === cell.selected);
                                 return (
                                   <td key={ci} style={{ padding: "10px 12px" }}>
                                     {s ? (
@@ -1902,7 +1897,7 @@ function App() {
                   style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                   ⬇ バックアップ保存
                 </button>
-                <button onClick={() => importFileRef.current?.click()}
+                <button onClick={() => importFileRef.current.click()}
                   style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                   ⬆ バックアップ復元
                 </button>
@@ -1929,7 +1924,7 @@ function App() {
                     <div key={snap.id} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: "18px 20px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: "#f1f5f9", marginBottom: 6 }}>{snap.theme?.name || "無題"}</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: "#f1f5f9", marginBottom: 6 }}>{snap.theme.name || "無題"}</div>
                           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10 }}>
                             <span style={{ fontSize: 11, color: "#475569" }}>🕐 {dateStr}</span>
                             <span style={{ fontSize: 11, color: "#64748b" }}>📦 {(snap.parts||[]).length}部品 / {(snap.categories||[]).length}大分類</span>
@@ -1960,11 +1955,11 @@ function App() {
                             style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             🔄 上書き復元
                           </button>
-                          <button onClick={() => exportExcel(snap.theme, snap.categories, snap.parts, snap.processes, (partId, ci) => snap.matrix?.[`${partId}_${ci}`] || { suppliers: [], selected: null })}
+                          <button onClick={() => exportExcel(snap.theme, snap.categories, snap.parts, snap.processes, (partId, ci) => snap.matrix.[`${partId}_${ci}`] || { suppliers: [], selected: null })}
                             style={{ background: "#14532d", border: "1px solid #22c55e33", borderRadius: 7, color: "#22c55e", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             📊 Excel
                           </button>
-                          <button onClick={() => showConfirm(`「${snap.theme?.name}」を削除しますか？`, () => deleteArchiveItem(snap.id))}
+                          <button onClick={() => showConfirm(`「${snap.theme.name}」を削除しますか？`, () => deleteArchiveItem(snap.id))}
                             style={{ background: "none", border: "1px solid #334155", borderRadius: 7, color: "#475569", padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>
                             🗑 削除
                           </button>
@@ -1983,7 +1978,7 @@ function App() {
       {modal && (
         <CellModal
           partName={modal.partName}
-          processName={processes[modal.processIdx]?.name}
+          processName={processes[modal.processIdx].name}
           cellData={getCell(modal.partId, modal.processIdx)}
           onUpdate={data => setCell(modal.partId, modal.processIdx, data)}
           onClose={() => setModal(null)}
