@@ -718,8 +718,11 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
 
     // 部品間合流線
     var lines = crossLinks.map(function(link) {
-      var fromEl = nodeRefs.current[link.fromPartId + "_" + link.fromProcIdx];
-      var toEl   = nodeRefs.current[link.toPartId   + "_" + link.toProcIdx];
+      // cell_ ref（採用カードが存在すれば採用、なければ最初のカード）を使う
+      var fromEl = nodeRefs.current[link.fromPartId + "_" + link.fromProcIdx]
+                || nodeRefs.current["cell_" + link.fromPartId + "_" + link.fromProcIdx];
+      var toEl   = nodeRefs.current[link.toPartId   + "_" + link.toProcIdx]
+                || nodeRefs.current["cell_" + link.toPartId   + "_" + link.toProcIdx];
       if (!fromEl || !toEl) return null;
       var fr = getRelPos(fromEl, cont);
       var tr = getRelPos(toEl,   cont);
@@ -1035,18 +1038,27 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
                             // クリックで: なし→候補→採用→なし
                             var status = isSel ? "adopted" : isCandidate ? "candidate" : "none";
                             var score = scores[si];
-                            var isWin = suppliers.length > 1 && score === maxScore && score > 0;
+                            // isWin: 採用以外の中で最高スコア
+                            var nonSelScores = suppliers.filter(function(sx) { return sx.id !== selected; }).map(function(sx) { return scoreSupplier(sx, suppliers); });
+                            var maxNonSelScore = Math.max.apply(null, nonSelScores.concat([0]));
+                            var isWin = !isSel && suppliers.length > 1 && score === maxNonSelScore && score > 0;
                             var sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
 
-                            // 採用サプライヤーにrefを付ける（矢印線用）
-                            // 検討サプライヤーにも ref を付ける（検討間点線用）
-                            var refFn = (isSel || isWin)
-                              ? function(el) {
-                                  if (!el) return;
-                                  if (isSel) nodeRefs.current[part.id + "_" + ci] = el;
-                                  if (isWin) nodeRefs.current["win_" + part.id + "_" + ci + "_" + s.id] = el;
-                                }
-                              : null;
+                            // ref: 採用カード → 採用矢印用、検討カード → 検討点線用、全カード → 合流線用（セル単位で代表1つ）
+                            var _sId = s.id;
+                            var _ci = ci;
+                            var _partId = part.id;
+                            var _isSel = isSel;
+                            var _isWin = isWin;
+                            var refFn = function(el) {
+                              if (!el) return;
+                              // 採用カード: 採用矢印の起点/終点
+                              if (_isSel) nodeRefs.current[_partId + "_" + _ci] = el;
+                              // 検討カード: 検討点線用
+                              if (_isWin) nodeRefs.current["win_" + _partId + "_" + _ci + "_" + _sId] = el;
+                              // 全カード: 合流線のセル代表（最初の1枚で上書き、採用があれば採用が最後に上書き）
+                              nodeRefs.current["cell_" + _partId + "_" + _ci] = el;
+                            };
 
                             // 背景・枠色
                             var bg = isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)"
