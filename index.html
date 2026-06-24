@@ -692,6 +692,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
   function removeCrossLink(id) { saveCL(crossLinks.filter(function(l) { return l.id !== id; })); }
 
   var [arrowLines, setArrowLines] = useState([]);
+  var [winLines, setWinLines] = useState([]);
 
   // DOM計測でSVG線座標を更新
   // getRelPos: 要素のコンテナ基準の座標を返す（スクロール対応）
@@ -754,6 +755,49 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
       }
     });
     setArrowLines(arrows);
+
+    // 検討（isWin）同士のグレー点線：同一部品の隣接工程間
+    var winLines = [];
+    displayParts.forEach(function(part) {
+      // 各工程で isWin なサプライヤーのIDを収集
+      var winByCol = {};
+      processes.forEach(function(proc, ci) {
+        var cell = getCell(part.id, ci);
+        if (!cell) return;
+        var suppliers = cell.suppliers || [];
+        var scores2 = suppliers.map(function(s2) { return scoreSupplier(s2, suppliers); });
+        var maxScore2 = Math.max.apply(null, scores2.concat([0]));
+        suppliers.forEach(function(s2, si) {
+          var isWin2 = suppliers.length > 1 && scores2[si] === maxScore2 && scores2[si] > 0 && s2.id !== cell.selected;
+          if (isWin2) {
+            if (!winByCol[ci]) winByCol[ci] = [];
+            winByCol[ci].push(s2.id);
+          }
+        });
+      });
+      // 隣接する工程ペアで検討同士を結ぶ
+      var cols = Object.keys(winByCol).map(Number).sort(function(a, b) { return a - b; });
+      for (var i = 0; i < cols.length - 1; i++) {
+        var ca = cols[i], cb = cols[i + 1];
+        if (cb - ca !== 1) continue; // 隣接のみ
+        winByCol[ca].forEach(function(aId) {
+          var fromEl2 = nodeRefs.current["win_" + part.id + "_" + ca + "_" + aId];
+          if (!fromEl2) return;
+          winByCol[cb].forEach(function(bId) {
+            var toEl2 = nodeRefs.current["win_" + part.id + "_" + cb + "_" + bId];
+            if (!toEl2) return;
+            var fr2 = getRelPos(fromEl2, cont);
+            var tr2 = getRelPos(toEl2, cont);
+            winLines.push({
+              id: "win_" + part.id + "_" + ca + "_" + aId + "_" + cb + "_" + bId,
+              x1: fr2.right, y1: fr2.top + fr2.height / 2,
+              x2: tr2.left,  y2: tr2.top + tr2.height / 2,
+            });
+          });
+        });
+      }
+    });
+    setWinLines(winLines);
   }
 
   useEffect(function() {
@@ -761,8 +805,9 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
   }, [crossLinks, displayParts.length, processes.length,
       displayParts.map(function(p) {
         return processes.map(function(proc, ci) {
-          var cell = getCell(p.id, ci); return cell ? cell.selected : null;
-        }).join(',');
+          var cell = getCell(p.id, ci);
+          return (cell ? cell.selected : null) + "|" + (cell && cell.candidates ? cell.candidates.join(",") : "");
+        }).join(';');
       }).join('|')
   ]);
 
@@ -815,8 +860,8 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
         </div>
       )}
 
-      {/* SVGオーバーレイ：工程間矢印 + 部品間合流線 */}
-      {(svgLines.length > 0 || arrowLines.length > 0) && (
+      {/* SVGオーバーレイ：工程間矢印 + 部品間合流線 + 検討点線 */}
+      {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0) && (
         <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible", minWidth: "100%", minHeight: "100%" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
@@ -850,6 +895,16 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
                     markerEnd="url(#gr-arrow)" opacity={1}/>
                 )}
               </g>
+            );
+          })}
+          {/* 検討同士のグレー点線 */}
+          {winLines.map(function(wl) {
+            return (
+              <line key={wl.id}
+                x1={wl.x1} y1={wl.y1} x2={wl.x2} y2={wl.y2}
+                stroke="#475569" strokeWidth={1.5}
+                strokeDasharray="5,4"
+                opacity={0.7}/>
             );
           })}
           {/* 部品間合流線 */}
@@ -984,7 +1039,14 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
                             var sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
 
                             // 採用サプライヤーにrefを付ける（矢印線用）
-                            var refFn = isSel ? function(el) { if (el) nodeRefs.current[part.id + "_" + ci] = el; } : null;
+                            // 検討サプライヤーにも ref を付ける（検討間点線用）
+                            var refFn = (isSel || isWin)
+                              ? function(el) {
+                                  if (!el) return;
+                                  if (isSel) nodeRefs.current[part.id + "_" + ci] = el;
+                                  if (isWin) nodeRefs.current["win_" + part.id + "_" + ci + "_" + s.id] = el;
+                                }
+                              : null;
 
                             // 背景・枠色
                             var bg = isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)"
@@ -1020,7 +1082,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
                                 {/* 状態バッジ */}
                                 {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
                                 {isCandidate && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#334155", color: "#94a3b8", fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>候補</div>}
-                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, right: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>推奨</div>}
+                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, right: 6, background: "#475569", color: "#e2e8f0", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>検討</div>}
                                 {/* 状態インジケーター */}
                                 <div style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: "50%", background: isSel ? "#0ea5e9" : isCandidate ? "#64748b" : "#1e293b" }}/>
                                 <div style={{ fontSize: 11, fontWeight: 700, color: nameColor, paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>{s.name || ("S" + (si+1))}</div>
@@ -1063,6 +1125,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
       {/* 凡例 */}
       <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 10, color: "#475569", flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#22c55e" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #22c55e", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>採用ルート（緑線）</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#475569", borderTop: "2px dashed #475569" }}/>検討同士（グレー点線）</div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#6366f1" }}/>部品間合流線（🔗で追加、×で削除）</div>
         <div style={{ color: "#334155" }}>カードをタップ: なし → 候補 → 採用 → なし</div>
       </div>
@@ -1203,7 +1266,20 @@ function App() {
   };
 
   const handleExportBackup = () => {
-    exportBackup(theme, categories, parts, processes, matrix, archive);
+    const data = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      themes,                        // 全テーマ
+      current: { theme, categories, parts, processes, matrix }, // 後方互換
+      archive,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `shoury_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleImportBackup = (e) => {
@@ -1211,11 +1287,14 @@ function App() {
     if (!file) return;
     setImportError("");
     importBackup(file, (data) => {
-      const c = data.current;
-      const restored = [{ theme: c.theme, categories: c.categories, parts: c.parts, processes: c.processes, matrix: c.matrix }];
-      setThemesRaw(restored);
-      saveThemes(restored);
-      setActiveThemeId(c.theme.id);
+      // 全テーマリストを復元（v2形式対応、v1はcurrentのみ）
+      const restoredThemes = data.themes || (() => {
+        const c = data.current;
+        return [{ theme: c.theme, categories: c.categories, parts: c.parts, processes: c.processes, matrix: c.matrix }];
+      })();
+      setThemesRaw(restoredThemes);
+      saveThemes(restoredThemes);
+      setActiveThemeId(restoredThemes[0].theme.id);
       if (data.archive) {
         localStorage.setItem(ARCHIVE_KEY, JSON.stringify(data.archive));
         setArchive(data.archive);
@@ -1265,7 +1344,7 @@ function App() {
 
   // アーカイブから新規テーマとして再編集
   const editFromArchive = (snap) => {
-    const newTheme = { ...snap.theme, id: newId(), name: snap.theme.name + " (再編集)" };
+    const newTheme = { ...snap.theme, id: newId(), name: snap.theme.name };
     const newEntry = {
       theme: newTheme,
       categories: snap.categories,
@@ -1402,6 +1481,15 @@ function App() {
             style={{ background: "#14532d", border: "1px solid #22c55e33", borderRadius: 7, color: "#22c55e", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
             📊 Excel
           </button>
+          <button onClick={handleExportBackup}
+            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            ⬇ BK保存
+          </button>
+          <button onClick={() => importFileRef.current?.click()}
+            style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            ⬆ BK復元
+          </button>
+          <input ref={importFileRef} type="file" accept=".json" onChange={handleImportBackup} style={{ display: "none" }} />
           {view === "flow" && (
             <>
               <select value={pdfMode} onChange={e => setPdfMode(e.target.value)}
@@ -1875,7 +1963,6 @@ function App() {
                   style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                   ⬆ バックアップ復元
                 </button>
-                <input ref={importFileRef} type="file" accept=".json" onChange={handleImportBackup} style={{ display: "none" }} />
               </div>
             </div>
             {importError && (
