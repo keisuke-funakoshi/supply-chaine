@@ -540,23 +540,6 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
             style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 8, color: "#fff", padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
           >＋ 追加</button>
         </div>
-      {/* データ修復: 重複部品の削除 */}
-      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px", marginTop: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9", marginBottom: 8 }}>データ修復</div>
-        <p style={{ fontSize: 11, color: "#475569", marginBottom: 12 }}>部品が重複している場合に修復します</p>
-        <button onClick={() => showConfirm("重複している部品を削除しますか？", () => {
-          const seen = new Set();
-          const deduped = parts.filter(p => {
-            const key = p.name + "_" + p.categoryId;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-          setParts(deduped);
-        })}
-          style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>
-          🔧 重複部品を削除
-        </button>
       </div>
     </div>
   );
@@ -1361,16 +1344,6 @@ function App() {
     const name = newPartName.trim();
     const catId = newPartCatId || categories[0]?.id;
     if (!name || !catId) return;
-    // 同一名・同一大分類の重複防止
-    const exists = parts.some(p => p.name === name && p.categoryId === catId);
-    if (exists) {
-      showConfirm('「' + name + '」は既に存在します。それでも追加しますか？', () => {
-        const next = [...parts, { id: newId(), categoryId: catId, name }];
-        setParts(next);
-        setNewPartName("");
-      });
-      return;
-    }
     setParts([...parts, { id: newId(), categoryId: catId, name }]);
     setNewPartName("");
   };
@@ -1661,7 +1634,7 @@ function App() {
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addPart(); } }} placeholder="部品名"
+                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPart()} placeholder="部品名"
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 100 }} />
                 <button onClick={addPart} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 部品</button>
               </div>
@@ -1673,48 +1646,36 @@ function App() {
               </div>
             </div>
 
-            {/* ── 大分類タブ ── */}
-            <div style={{ borderBottom: "2px solid #1e293b", marginBottom: 16 }}>
-              <div style={{ display: "flex", gap: 0, overflowX: "auto" }}>
-                {/* すべてタブ */}
-                <button onClick={() => setFlowPartId("__all__")}
-                  style={{ background: "none", border: "none", borderBottom: `3px solid ${(!flowPartId || flowPartId === "__all__") ? "#6366f1" : "transparent"}`, color: (!flowPartId || flowPartId === "__all__") ? "#e2e8f0" : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: (!flowPartId || flowPartId === "__all__") ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2 }}>
-                  すべて
-                </button>
-                {/* 大分類タブ */}
-                {categories.map(cat => {
-                  const catParts = parts.filter(p => p.categoryId === cat.id);
-                  if (!catParts.length) return null;
-                  const isActive = flowPartId === "cat:" + cat.id || catParts.some(p => p.id === flowPartId);
-                  return (
-                    <button key={cat.id} onClick={() => setFlowPartId("cat:" + cat.id)}
-                      style={{ background: "none", border: "none", borderBottom: `3px solid ${isActive ? cat.color : "transparent"}`, color: isActive ? cat.color : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: isActive ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2, display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
+            {/* ── 大分類フィルタ（全部品 / 大分類 / 個別部品） ── */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+              {/* 全部品ボタン */}
+              <button onClick={() => setFlowPartId("__all__")}
+                style={{ background: (!flowPartId || flowPartId === "__all__") ? "#1e293b" : "transparent", border: `1px solid ${(!flowPartId || flowPartId === "__all__") ? "#475569" : "#1e293b"}`, borderRadius: 20, color: (!flowPartId || flowPartId === "__all__") ? "#e2e8f0" : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer", fontWeight: (!flowPartId || flowPartId === "__all__") ? 700 : 400 }}>
+                すべて
+              </button>
+              {/* 大分類ごとに色ドット＋部品ボタン */}
+              {categories.map(cat => {
+                const catParts = parts.filter(p => p.categoryId === cat.id);
+                if (!catParts.length) return null;
+                const isActiveCat = catParts.some(p => p.id === flowPartId);
+                return (
+                  <div key={cat.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "#0a1220", border: `1px solid ${isActiveCat ? cat.color + "66" : "#1e293b"}`, borderRadius: 20, padding: "2px 6px 2px 8px" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, flexShrink: 0 }} />
+                    <button onClick={() => setFlowPartId("cat:" + cat.id)}
+                      style={{ background: flowPartId === "cat:" + cat.id ? cat.color + "33" : "transparent", border: "none", color: cat.color, fontWeight: 700, fontSize: 10, cursor: "pointer", padding: "0 2px", marginRight: 2 }}>
                       {cat.name}
                     </button>
-                  );
-                })}
-              </div>
-              {/* 選択中の大分類内の部品タブ（2段目） */}
-              {flowPartId && flowPartId !== "__all__" && (() => {
-                const activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
-                  : parts.find(p => p.id === flowPartId)?.categoryId;
-                const activeCat = categories.find(c => c.id === activeCatId);
-                const catParts = parts.filter(p => p.categoryId === activeCatId);
-                if (!catParts.length || !activeCat) return null;
-                return (
-                  <div style={{ display: "flex", gap: 0, paddingLeft: 8, overflowX: "auto", borderTop: "1px solid #1e293b" }}>
                     {catParts.map(part => (
-                      <button key={part.id} onClick={() => setFlowPartId(part.id)}
-                        style={{ background: "none", border: "none", borderBottom: `2px solid ${flowPartId === part.id ? activeCat.color : "transparent"}`, color: flowPartId === part.id ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: flowPartId === part.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
+                      <button key={part.id} onClick={() => setFlowPartId(flowPartId === part.id ? "__all__" : part.id)}
+                        style={{ background: flowPartId === part.id ? cat.color + "33" : "transparent", border: `1px solid ${flowPartId === part.id ? cat.color : "#334155"}`, borderRadius: 14, color: flowPartId === part.id ? cat.color : "#64748b", padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
                         {part.name}
                       </button>
                     ))}
-                    <button onClick={() => { setNewPartCatId(activeCatId); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }}
-                      style={{ background: "none", border: "none", color: "#334155", padding: "5px 8px", fontSize: 14, cursor: "pointer" }}>＋</button>
+                    <button onClick={() => { setNewPartCatId(cat.id); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }} title="この大分類に部品追加"
+                      style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1 }}>＋</button>
                   </div>
                 );
-              })()}
+              })}
             </div>
 
             {/* ── 工程管理バー（フロー図直上） ── */}
