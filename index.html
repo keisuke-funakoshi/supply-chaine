@@ -1,30 +1,37 @@
 <!DOCTYPE html>
-<html lang="ja"><head>
-  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>商流シミュレーター</title>
-  <meta name="theme-color" content="#6366f1"/>
-  <link rel="manifest" href="manifest.json"/>
-  <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="商流"/>
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#020817}</style>
+  <meta name="theme-color" content="#020817" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="商流" />
   <script>
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister();});});
-      caches.keys().then(function(k){k.forEach(function(x){caches.delete(x);});});
-      window.addEventListener('load',function(){navigator.serviceWorker.register('./sw.js');});
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
-    window.onerror=function(msg,src,line){document.getElementById('root').innerHTML='<div style="color:red;padding:20px;font-family:monospace;background:#fff;white-space:pre">Error: '+msg+'\nLine: '+line+'</div>';};
   </script>
-</head><body>
+  <meta name="apple-mobile-web-app-title" content="商流シミュレーター" />
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #020817; }</style>
+  <script>
+    window.onerror = function(msg, src, line, col, err) {
+      document.getElementById('root').innerHTML =
+        '<div style="color:red;padding:20px;font-family:monospace;background:#fff;white-space:pre-wrap">Error: ' + msg + '\nLine: ' + line + '</div>';
+    };
+  </script>
+</head>
+<body>
   <div id="root"></div>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="text/babel" data-presets="env,react">
-const {useState,useRef,useCallback,useEffect,useMemo}=React;
+const { useState, useRef, useCallback, useEffect, useMemo } = React;
 // ─── ユーティリティ ───────────────────────────────────────────────────
 const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
 let uid = 300;
@@ -244,97 +251,85 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 }
 
 // ─── PDF出力（フロー図SVGをPDF化） ────────────────────────────────────
-// ─── PDF出力（白背景・全部品/部品ごと） ─────────────────────────────
-function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) {
-  var NW=190, NH=72, NGAP=8, CGAP=48, LW=130, HDRH=36, PAD=16;
-  var cols = procNames.map(function(proc, ci) {
-    var cell = getCell(partId, ci);
-    return { proc: proc, suppliers: cell&&cell.suppliers?cell.suppliers:[], selected: cell?cell.selected:null, candidates: cell&&cell.candidates?cell.candidates:[] };
-  });
-  var maxRows = Math.max.apply(null, cols.map(function(c){return c.suppliers.length;}).concat([1]));
-  var svgW = PAD + LW + procNames.length*NW + (procNames.length-1)*CGAP + PAD;
-  var svgH = PAD + 20 + HDRH + maxRows*(NH+NGAP) + PAD;
-  var out = [];
-  out.push('<svg xmlns="http://www.w3.org/2000/svg" width="'+svgW+'" height="'+svgH+'" style="background:#fff;font-family:Arial,sans-serif">');
-  out.push('<rect width="'+svgW+'" height="'+svgH+'" fill="#fff"/>');
-  var titleY = PAD+14;
-  out.push('<text x="'+PAD+'" y="'+titleY+'" font-size="13" font-weight="bold" fill="#1e293b">'+(catName?catName+' / ':'')+partName+'</text>');
-  out.push('<text x="'+(svgW-PAD)+'" y="'+titleY+'" font-size="10" fill="#94a3b8" text-anchor="end">'+themeName+'</text>');
-  var baseY = PAD+20;
-  out.push('<rect x="'+PAD+'" y="'+(baseY+HDRH)+'" width="'+LW+'" height="'+(maxRows*(NH+NGAP))+'" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>');
-  out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+HDRH+maxRows*(NH+NGAP)/2+5)+'" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">'+partName+'</text>');
-  out.push('<defs><marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#16a34a"/></marker></defs>');
-  cols.forEach(function(col, ci) {
-    var x = PAD+LW+ci*(NW+CGAP);
-    out.push('<rect x="'+x+'" y="'+baseY+'" width="'+NW+'" height="'+HDRH+'" rx="6" fill="#334155"/>');
-    out.push('<text x="'+(x+NW/2)+'" y="'+(baseY+HDRH/2+5)+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff">'+col.proc+'</text>');
-    if (ci < cols.length-1) {
-      var ay = baseY+HDRH/2;
-      out.push('<line x1="'+(x+NW)+'" y1="'+ay+'" x2="'+(x+NW+CGAP-8)+'" y2="'+ay+'" stroke="#94a3b8" stroke-width="1.5"/>');
-      out.push('<polygon points="'+(x+NW+CGAP-8)+','+(ay-4)+' '+(x+NW+CGAP)+','+ay+' '+(x+NW+CGAP-8)+','+(ay+4)+'" fill="#94a3b8"/>');
-    }
-    col.suppliers.forEach(function(s, si) {
-      var ny = baseY+HDRH+si*(NH+NGAP);
-      var isSel = s.id===col.selected;
-      var isCand = col.candidates.indexOf(s.id)>=0;
-      var bg = isSel?'#eff6ff':isCand?'#f8fafc':'#fff';
-      var stroke = isSel?'#2563eb':'#e2e8f0';
-      var sw2 = isSel?2:1;
-      out.push('<rect x="'+x+'" y="'+ny+'" width="'+NW+'" height="'+NH+'" rx="7" fill="'+bg+'" stroke="'+stroke+'" stroke-width="'+sw2+'"/>');
-      if (isSel) {
-        out.push('<rect x="'+(x+4)+'" y="'+(ny-7)+'" width="30" height="12" rx="6" fill="#2563eb"/>');
-        out.push('<text x="'+(x+19)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">&#x2713;採用</text>');
-      } else if (isCand) {
-        out.push('<rect x="'+(x+4)+'" y="'+(ny-7)+'" width="24" height="12" rx="6" fill="#64748b"/>');
-        out.push('<text x="'+(x+16)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" fill="#fff">候補</text>');
-      }
-      out.push('<text x="'+(x+8)+'" y="'+(ny+18)+'" font-size="11" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'">'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</text>');
-      if (s.cost) out.push('<text x="'+(x+8)+'" y="'+(ny+34)+'" font-size="9" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
-      if (s.leadTime) out.push('<text x="'+(x+8)+'" y="'+(ny+48)+'" font-size="9" fill="#64748b">LT:'+s.leadTime+'&#26085;</text>');
-    });
-    // 採用ルート矢印
-    if (ci>0) {
-      var prev = cols[ci-1];
-      if (prev.selected && col.selected) {
-        var psi = prev.suppliers.findIndex(function(s){return s.id===prev.selected;});
-        var csi2 = col.suppliers.findIndex(function(s){return s.id===col.selected;});
-        if (psi>=0 && csi2>=0) {
-          var px2 = PAD+LW+(ci-1)*(NW+CGAP)+NW;
-          var py2 = baseY+HDRH+psi*(NH+NGAP)+NH/2;
-          var cx3 = PAD+LW+ci*(NW+CGAP);
-          var cy3 = baseY+HDRH+csi2*(NH+NGAP)+NH/2;
-          out.push('<line x1="'+px2+'" y1="'+py2+'" x2="'+(cx3-6)+'" y2="'+cy3+'" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ga)"/>');
-        }
-      }
-    }
-  });
-  out.push('</svg>');
-  return out.join('');
-}
+function exportFlowPDF(partName, processes, cols) {
+  const NODE_W = 200, NODE_H = 70, NODE_GAP = 10, COL_GAP = 60, HEADER_H = 40, PAD = 24;
+  const maxRows = Math.max(...cols.map(c => c.suppliers.length), 1);
+  const svgW = PAD * 2 + cols.length * NODE_W + (cols.length - 1) * COL_GAP;
+  const svgH = PAD + HEADER_H + maxRows * (NODE_H + NODE_GAP) + PAD;
 
-function exportPDF(mode, themeName, targetParts, categories, processes, getCell) {
-  var pages = [];
-  if (mode==="all") {
-    var svgs = targetParts.map(function(part) {
-      var cat = categories.find(function(c){return c.id===part.categoryId;});
-      return buildPartSVG(themeName, part.name, cat?cat.name:'', processes.map(function(p){return p.name;}), getCell, part.id);
-    });
-    pages.push('<div>'+svgs.join('<div style="height:24px"></div>')+'</div>');
-  } else {
-    targetParts.forEach(function(part, i) {
-      var cat = categories.find(function(c){return c.id===part.categoryId;});
-      var svg = buildPartSVG(themeName, part.name, cat?cat.name:'', processes.map(function(p){return p.name;}), getCell, part.id);
-      pages.push('<div style="page-break-after:'+(i<targetParts.length-1?'always':'avoid')+'">'+svg+'</div>');
+  const nodeCx = (ci) => PAD + ci * (NODE_W + COL_GAP);
+  const nodeCy = (si) => PAD + HEADER_H + si * (NODE_H + NODE_GAP);
+
+  // Build SVG string
+  let svgParts = [];
+  svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH + 60}" style="background:#020817;font-family:Arial,sans-serif">`);
+
+  // Title
+  svgParts.push(`<text x="${PAD}" y="20" fill="#f1f5f9" font-size="14" font-weight="bold">${partName} — 商流フロー図</text>`);
+
+  // Process headers
+  cols.forEach((col, ci) => {
+    const x = nodeCx(ci);
+    svgParts.push(`<rect x="${x}" y="${PAD + 4}" width="${NODE_W}" height="${HEADER_H - 8}" rx="6" fill="#1e293b"/>`);
+    svgParts.push(`<text x="${x + NODE_W/2}" y="${PAD + 4 + (HEADER_H-8)/2 + 5}" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="bold">${col.proc}</text>`);
+    if (ci < cols.length - 1) {
+      svgParts.push(`<text x="${x + NODE_W + COL_GAP/2}" y="${PAD + 4 + (HEADER_H-8)/2 + 5}" text-anchor="middle" fill="#475569" font-size="18">→</text>`);
+    }
+  });
+
+  // Lines
+  for (let ci = 0; ci < cols.length - 1; ci++) {
+    const from = cols[ci], to = cols[ci + 1];
+    from.suppliers.forEach((fs, fsi) => {
+      to.suppliers.forEach((ts, tsi) => {
+        const adopted = from.selected === fs.id && to.selected === ts.id;
+        const semiAdopted = from.selected === fs.id || to.selected === ts.id;
+        const x1 = nodeCx(ci) + NODE_W, y1 = nodeCy(fsi) + NODE_H/2;
+        const x2 = nodeCx(ci+1), y2 = nodeCy(tsi) + NODE_H/2;
+        const mx = (x1+x2)/2;
+        if (adopted) {
+          svgParts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#22c55e" stroke-width="3" marker-end="url(#ag)"/>`);
+        } else if (semiAdopted) {
+          svgParts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3b6fa0" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#as)" opacity="0.7"/>`);
+        } else {
+          svgParts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#1e3a5f" stroke-width="1" stroke-dasharray="4,3" opacity="0.4"/>`);
+        }
+      });
     });
   }
-  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;</title>'
-    +'<style>body{margin:0;padding:16px;background:#fff}@media print{body{margin:0;padding:0}@page{size:landscape;margin:10mm}}</style>'
-    +'</head><body>'+pages.join('')
-    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},600);};<\/scr'+'ipt>'
-    +'</body></html>';
-  var win = window.open('','_blank');
-  if (win){win.document.write(html);win.document.close();}
+
+  // Nodes
+  cols.forEach((col, ci) => {
+    col.suppliers.forEach((s, si) => {
+      const x = nodeCx(ci), y = nodeCy(si);
+      const isSel = col.selected === s.id;
+      const bg = isSel ? "#0c2040" : "#0f172a";
+      const border = isSel ? "#0ea5e9" : "#1e293b";
+      const strokeW = isSel ? 2 : 1;
+      svgParts.push(`<rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="7" fill="${bg}" stroke="${border}" stroke-width="${strokeW}"/>`);
+      if (isSel) svgParts.push(`<rect x="${x+4}" y="${y-8}" width="36" height="14" rx="7" fill="#0ea5e9"/><text x="${x+22}" y="${y+1}" text-anchor="middle" fill="#fff" font-size="8" font-weight="bold">✓ 採用</text>`);
+      svgParts.push(`<text x="${x+10}" y="${y+22}" fill="${isSel ? '#f1f5f9' : '#94a3b8'}" font-size="11" font-weight="${isSel ? 'bold' : 'normal'}">${s.name || "未入力"}</text>`);
+      if (s.cost) svgParts.push(`<text x="${x+10}" y="${y+40}" fill="#0ea5e9" font-size="10">¥${parseFloat(s.cost).toLocaleString()}</text>`);
+      if (s.leadTime) svgParts.push(`<text x="${x+110}" y="${y+40}" fill="#64748b" font-size="10">LT:${s.leadTime}日</text>`);
+      if (s.quality) svgParts.push(`<text x="${x+10}" y="${y+56}" fill="#64748b" font-size="9">品質:${s.quality}/100　MOQ:${s.moq || "?"}個</text>`);
+    });
+  });
+
+  // Arrow defs
+  svgParts.push('<defs><marker id="ag" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#22c55e"/></marker><marker id="as" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3b6fa0"/></marker></defs>');
+  svgParts.push(`</svg>`);
+
+  const svgStr = svgParts.join('\n');
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+
+  // Open in new window and print as PDF
+  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + partName + ' 商流フロー図</title><style>body{margin:0;background:#020817}@media print{body{margin:0}@page{size:landscape;margin:8mm}}</style></head><body><img src="' + url + '" style="max-width:100%;height:auto" onload="setTimeout(()=>window.print(),500)"/></body></html>';
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
 }
+
 // ─── サンプルデータ ───────────────────────────────────────────────────
 // 階層: テーマ > 大分類(category) > 部品(part) > 工程×サプライヤ
 const SAMPLE_THEME = { id: "t1", name: "次世代スマートセンサー開発" };
@@ -448,7 +443,7 @@ function ScoreBar({ value }) {
 }
 
 // ─── テーマ/大分類設定パネル ──────────────────────────────────────────
-function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts, showConfirm }) {
+function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts }) {
   const [newCatName, setNewCatName] = useState("");
   const drag = useDragSort(categories, setCategories);
 
@@ -546,7 +541,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
 }
 
 // ─── セル詳細モーダル ─────────────────────────────────────────────────
-function CellModal({ partName, processName, cellData, onUpdate, onClose, showConfirm }) {
+function CellModal({ partName, processName, cellData, onUpdate, onClose }) {
   const suppliers = cellData?.suppliers || [];
   const selected = cellData?.selected ?? null;
 
@@ -600,7 +595,7 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
                 return (
                   <div key={s.id} draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDragEnd={onDragEnd}
                     style={{ minWidth: 200, background: isWinner ? "linear-gradient(135deg,#0f2027,#1a3a2a)" : "#0a1628", border: `1px solid ${isSelected ? "#0ea5e9" : isWinner ? "#22c55e" : "#1e293b"}`, borderRadius: 10, padding: 14, position: "relative", cursor: "grab", flexShrink: 0 }}>
-                    {isWinner && <div style={{ position: "absolute", top: -9, left: 10, background: "#22c55e", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>検討</div>}
+                    {isWinner && <div style={{ position: "absolute", top: -9, left: 10, background: "#22c55e", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>推奨</div>}
                     <div style={{ display: "flex", alignItems: "center", marginBottom: 10, gap: 6 }}>
                       <span style={{ color: "#334155", fontSize: 13 }}>⠿</span>
                       <input value={s.name} onChange={e => changeSupplier(s.id, "name", e.target.value)} placeholder={`サプライヤー ${i + 1}`}
@@ -666,446 +661,230 @@ function MatrixCell({ cellData, onClick }) {
   );
 }
 
-// ─── フロービュー ────────────────────────────────────────────────────
-const CROSS_LINKS_KEY = "shoury_crosslinks_v1";
-function loadCrossLinks() { try { return JSON.parse(localStorage.getItem(CROSS_LINKS_KEY) || "{}"); } catch { return {}; } }
-function saveCrossLinks(data) { localStorage.setItem(CROSS_LINKS_KEY, JSON.stringify(data)); }
+// ─── フロービュー（テーブル形式・部品行＋工程列） ─────────────────────
+// 1部品分のサプライヤーカラムを描画するサブコンポーネント
+function FlowPartRow({ part, cat, processes, getCell, setCell, targetCostMap, setTargetCostMap }) {
+  const NODE_W = 180, NODE_H = 78, NODE_GAP = 8, COL_GAP = 44;
+  const [tooltip, setTooltip] = useState(null);
 
-const FNODE_W = 180, FNODE_GAP = 40, FLABEL_W = 148;
-
-function FlowView({ partIds, parts, setParts, removePart, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId, showConfirm }) {
-  var displayParts = partIds === "__all__" ? parts : parts.filter(function(p) { return partIds.indexOf(p.id) >= 0; });
-  var [crossLinks, setCrossLinksRaw] = useState(function() {
-    var all = loadCrossLinks(); return all[themeId] || [];
+  const cols = processes.map((proc, ci) => {
+    const cell = getCell(part.id, ci);
+    return { proc, ci, suppliers: cell?.suppliers || [], selected: cell?.selected ?? null };
   });
-  var [linkDialog, setLinkDialog] = useState(null); // { fromPartId, fromProcIdx, fromLabel }
-  var nodeRefs = useRef({}); // key: "partId_ci" -> DOM el
-  var containerRef = useRef(null);
-  var [svgLines, setSvgLines] = useState([]);
 
-  function saveCL(next) { var all = loadCrossLinks(); all[themeId] = next; saveCrossLinks(all); setCrossLinksRaw(next); }
+  const maxRows = Math.max(...cols.map(c => c.suppliers.length), 1);
+  const rowH = maxRows * (NODE_H + NODE_GAP);
 
-  function addCrossLink(fromPartId, fromProcIdx, toPartId, toProcIdx) {
-    var next = crossLinks.concat([{ id: newId(), fromPartId: fromPartId, fromProcIdx: fromProcIdx, toPartId: toPartId, toProcIdx: toProcIdx }]);
-    saveCL(next); setLinkDialog(null);
-  }
-  function removeCrossLink(id) { saveCL(crossLinks.filter(function(l) { return l.id !== id; })); }
+  // SVGサイズ（部品ラベル列を除いた工程部分のみ）
+  const svgW = cols.length * NODE_W + (cols.length - 1) * COL_GAP;
+  const svgH = rowH;
+  const nx = (ci) => ci * (NODE_W + COL_GAP) + NODE_W / 2;
+  const ny = (si) => si * (NODE_H + NODE_GAP) + NODE_H / 2;
 
-  var [arrowLines, setArrowLines] = useState([]);
-  var [winnerArrows, setWinnerArrows] = useState([]);
+  const toggleSelect = (ci, sid) => {
+    const cell = getCell(part.id, ci);
+    setCell(part.id, ci, { ...cell, selected: cell.selected === sid ? null : sid });
+  };
 
-  // DOM計測でSVG線座標を更新
-  // getRelPos: 要素のコンテナ基準の座標を返す（スクロール対応）
-  function getRelPos(el, container) {
-    var eRect = el.getBoundingClientRect();
-    var cRect = container.getBoundingClientRect();
-    // コンテナのスクロール量も加算
-    var scrollLeft = container.scrollLeft || 0;
-    var scrollTop  = container.scrollTop  || 0;
-    return {
-      left:   eRect.left   - cRect.left + scrollLeft,
-      right:  eRect.right  - cRect.left + scrollLeft,
-      top:    eRect.top    - cRect.top  + scrollTop,
-      bottom: eRect.bottom - cRect.top  + scrollTop,
-      width:  eRect.width,
-      height: eRect.height,
-    };
-  }
-
-  function recalcLines() {
-    if (!containerRef.current) return;
-    var cont = containerRef.current;
-
-    // 部品間合流線
-    var lines = crossLinks.map(function(link) {
-      var fromEl = nodeRefs.current[link.fromPartId + "_" + link.fromProcIdx];
-      var toEl   = nodeRefs.current[link.toPartId   + "_" + link.toProcIdx];
-      if (!fromEl || !toEl) return null;
-      var fr = getRelPos(fromEl, cont);
-      var tr = getRelPos(toEl,   cont);
-      return { id: link.id,
-        x1: fr.right,            y1: fr.top + fr.height / 2,
-        x2: tr.left,             y2: tr.top + tr.height / 2 };
-    }).filter(Boolean);
-    setSvgLines(lines);
-
-    // 工程間採用矢印（スキップ対応）
-    var arrows = [];
-    displayParts.forEach(function(part) {
-      var adoptedCols = [];
-      processes.forEach(function(proc, ci) {
-        var cell = getCell(part.id, ci);
-        if (cell && cell.selected) adoptedCols.push(ci);
+  // 接続線
+  const lines = [];
+  for (let ci = 0; ci < cols.length - 1; ci++) {
+    const from = cols[ci], to = cols[ci + 1];
+    from.suppliers.forEach((fs, fsi) => {
+      to.suppliers.forEach((ts, tsi) => {
+        const adopted = from.selected === fs.id && to.selected === ts.id;
+        const semi = from.selected === fs.id || to.selected === ts.id;
+        lines.push({ key: `${ci}-${fsi}-${tsi}`, x1: nx(ci) + NODE_W / 2, y1: ny(fsi), x2: nx(ci + 1) - NODE_W / 2, y2: ny(tsi), adopted, semi });
       });
-      for (var i = 0; i < adoptedCols.length - 1; i++) {
-        var fromCi = adoptedCols[i];
-        var toCi   = adoptedCols[i + 1];
-        var fromEl = nodeRefs.current[part.id + "_" + fromCi];
-        var toEl   = nodeRefs.current[part.id + "_" + toCi];
-        if (!fromEl || !toEl) continue;
-        var pr  = getRelPos(fromEl, cont);
-        var cr2 = getRelPos(toEl,   cont);
-        arrows.push({
-          id: part.id + "_arr_" + fromCi + "_" + toCi,
-          x1: pr.right,            y1: pr.top  + pr.height  / 2,
-          x2: cr2.left,            y2: cr2.top + cr2.height / 2,
-          adopted: true,
-          skip: (toCi - fromCi) > 1,
-        });
-      }
     });
-    // 検討中ルート（winnerId同士をグレー点線で結ぶ）
-    var winnerArrows = [];
-    displayParts.forEach(function(part) {
-      var winCols = [];
-      processes.forEach(function(proc, ci) {
-        var el = nodeRefs.current[part.id + "_" + ci + "_w"];
-        if (el) winCols.push({ ci: ci, el: el });
-      });
-      for (var wi = 0; wi < winCols.length - 1; wi++) {
-        var wFrom = winCols[wi];
-        var wTo   = winCols[wi + 1];
-        var wpr = getRelPos(wFrom.el, cont);
-        var wcr = getRelPos(wTo.el,   cont);
-        winnerArrows.push({
-          id: part.id + "_warr_" + wFrom.ci + "_" + wTo.ci,
-          x1: wpr.right, y1: wpr.top + wpr.height / 2,
-          x2: wcr.left,  y2: wcr.top + wcr.height / 2,
-          skip: (wTo.ci - wFrom.ci) > 1,
-        });
-      }
-    });
-    setWinnerArrows(winnerArrows);
-    setArrowLines(arrows);
   }
 
-  useEffect(function() {
-    recalcLines();
-  }, [crossLinks, displayParts.length, processes.length,
-      displayParts.map(function(p) {
-        return processes.map(function(proc, ci) {
-          var cell = getCell(p.id, ci); return cell ? cell.selected : null;
-        }).join(',');
-      }).join('|')
-  ]);
+  // 採用コスト合計
+  const adoptedCost = cols.reduce((sum, col) => {
+    const sel = col.suppliers.find(s => s.id === col.selected);
+    return sel?.cost ? sum + parseFloat(sel.cost) : sum;
+  }, 0);
+  const targetCost = targetCostMap[part.id] || "";
+  const overBudget = targetCost && adoptedCost > parseFloat(targetCost);
 
-  // スクロール・リサイズ時も再計算
-  useEffect(function() {
-    window.addEventListener('scroll', recalcLines, true);
-    window.addEventListener('resize', recalcLines);
-    return function() {
-      window.removeEventListener('scroll', recalcLines, true);
-      window.removeEventListener('resize', recalcLines);
-    };
-  }, [crossLinks, displayParts.length, processes.length]);
+  return (
+    <tr style={{ borderBottom: "1px solid #1e293b" }}>
+      {/* 部品ラベル列 */}
+      <td style={{ padding: "8px 10px 8px 0", verticalAlign: "top", minWidth: 130, maxWidth: 150 }}>
+        <div style={{ background: "#0f172a", border: `1px solid ${cat?.color || "#1e293b"}44`, borderRadius: 10, padding: "10px 12px", height: "100%", boxSizing: "border-box" }}>
+          {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 4, letterSpacing: "0.04em" }}>{cat.name}</div>}
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", marginBottom: 8 }}>{part.name}</div>
+          <div style={{ fontSize: 9, color: "#475569", marginBottom: 3 }}>目標コスト</div>
+          <input
+            type="number"
+            value={targetCost}
+            onChange={e => setTargetCostMap(prev => ({ ...prev, [part.id]: e.target.value }))}
+            placeholder="—"
+            style={{ width: "100%", background: "#1e293b", border: `1px solid ${overBudget ? "#ef4444" : "#334155"}`, borderRadius: 6, color: "#e2e8f0", padding: "4px 6px", fontSize: 11, outline: "none", boxSizing: "border-box" }}
+          />
+          {adoptedCost > 0 && (
+            <div style={{ marginTop: 6, fontSize: 10, fontWeight: 700, color: overBudget ? "#ef4444" : "#22c55e" }}>
+              採用計 ¥{adoptedCost.toLocaleString()}
+              {overBudget && <span style={{ display: "block", fontSize: 9, color: "#ef4444" }}>▲ 目標超過</span>}
+            </div>
+          )}
+        </div>
+      </td>
+
+      {/* 工程カラム群（SVG線 + HTML カード） */}
+      <td style={{ padding: "8px 0", verticalAlign: "top" }}>
+        <div style={{ position: "relative", overflowX: "auto" }}>
+          {/* SVG 接続線レイヤー */}
+          <svg width={svgW} height={svgH} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 0 }}>
+            <defs>
+              {[["fg-gray","#1e3a5f"],["fg-semi","#3b6fa0"],["fg-green","#22c55e"]].map(([id,fill]) => (
+                <marker key={id} id={id + part.id} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <path d="M0,0 L6,3 L0,6 Z" fill={fill} />
+                </marker>
+              ))}
+            </defs>
+            {lines.filter(l => !l.adopted && !l.semi).map(l => (
+              <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#1e3a5f" strokeWidth={1} strokeDasharray="4 3" markerEnd={`url(#fg-gray${part.id})`} opacity={0.4} />
+            ))}
+            {lines.filter(l => !l.adopted && l.semi).map(l => (
+              <line key={l.key+"s"} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#3b6fa0" strokeWidth={1.5} strokeDasharray="5 3" markerEnd={`url(#fg-semi${part.id})`} opacity={0.6} />
+            ))}
+            {lines.filter(l => l.adopted).map(l => (
+              <g key={l.key+"a"}>
+                <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#22c55e" strokeWidth={6} opacity={0.12} />
+                <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#22c55e" strokeWidth={2.5} markerEnd={`url(#fg-green${part.id})`} />
+                <circle cx={(l.x1+l.x2)/2} cy={(l.y1+l.y2)/2} r={4} fill="#22c55e" />
+              </g>
+            ))}
+          </svg>
+
+          {/* HTMLカード */}
+          <div style={{ position: "relative", zIndex: 1, width: svgW, minHeight: svgH, display: "flex", gap: COL_GAP }}>
+            {cols.map((col, ci) => {
+              const scores = Object.fromEntries(col.suppliers.map(s => [s.id, scoreSupplier(s, col.suppliers)]));
+              const maxS = Math.max(...Object.values(scores), 0);
+              const winnerId = col.suppliers.find(s => scores[s.id] === maxS && maxS > 0 && col.suppliers.length > 1)?.id;
+              return (
+                <div key={ci} style={{ width: NODE_W, flexShrink: 0 }}>
+                  {col.suppliers.map((s, si) => {
+                    const isSel = col.selected === s.id;
+                    const isWin = s.id === winnerId;
+                    const score = scores[s.id];
+                    const sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
+                    return (
+                      <div key={s.id}
+                        onClick={() => toggleSelect(ci, s.id)}
+                        onMouseEnter={e => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const cr = e.currentTarget.closest(".flow-container").getBoundingClientRect();
+                          setTooltip({ s, score, x: rect.right - cr.left + 8, y: rect.top - cr.top });
+                        }}
+                        onMouseLeave={() => setTooltip(null)}
+                        style={{ marginBottom: NODE_GAP, height: NODE_H, background: isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)" : isWin ? "linear-gradient(135deg,#0f172a,#0f2a1a)" : "#0a1220", border: `${isSel ? 2 : 1}px solid ${isSel ? "#0ea5e9" : isWin ? "#22c55e" : "#1e293b"}`, borderRadius: 9, padding: "9px 11px", cursor: "pointer", boxSizing: "border-box", position: "relative", userSelect: "none" }}>
+                        {isWin && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>推奨</div>}
+                        {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
+                        <div style={{ position: "absolute", top: 7, right: 7, width: 6, height: 6, borderRadius: "50%", background: sc }} />
+                        <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? "#f1f5f9" : "#94a3b8", marginBottom: 4, paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {s.name || `S${si + 1}`}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {s.cost && <span style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(s.cost).toLocaleString()}</span>}
+                          {s.leadTime && <span style={{ fontSize: 10, color: "#64748b" }}>LT:{s.leadTime}日</span>}
+                        </div>
+                        <div style={{ marginTop: 6, height: 3, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ width: `${score}%`, height: "100%", background: sc, borderRadius: 2 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {col.suppliers.length === 0 && (
+                    <div style={{ height: NODE_H, border: "1px dashed #1e293b", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", color: "#1e293b", fontSize: 11 }}>未登録</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {tooltip && (
+            <div style={{ position: "absolute", left: Math.min(tooltip.x, svgW - 200), top: tooltip.y, zIndex: 50, background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: "11px 13px", width: 190, pointerEvents: "none", boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", marginBottom: 7 }}>{tooltip.s.name || "未入力"}</div>
+              {[["単価", tooltip.s.cost ? `¥${parseFloat(tooltip.s.cost).toLocaleString()}` : "—", "#0ea5e9"],
+                ["リードタイム", tooltip.s.leadTime ? `${tooltip.s.leadTime}日` : "—", "#94a3b8"],
+                ["品質スコア", tooltip.s.quality ? `${tooltip.s.quality}/100` : "—", "#94a3b8"],
+                ["MOQ", tooltip.s.moq ? `${tooltip.s.moq}個` : "—", "#94a3b8"]].map(([l,v,c]) => (
+                <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                  <span style={{ fontSize: 10, color: "#475569" }}>{l}</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: c }}>{v}</span>
+                </div>
+              ))}
+              {tooltip.s.notes && <div style={{ marginTop: 7, fontSize: 10, color: "#64748b", borderTop: "1px solid #1e293b", paddingTop: 7 }}>{tooltip.s.notes}</div>}
+              <div style={{ marginTop: 7, textAlign: "center", fontSize: 9, color: "#334155" }}>クリックで採用 / 解除</div>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// 全体フロー表（工程ヘッダー行 + 部品行リスト）
+function FlowView({ partIds, parts, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap }) {
+  const displayParts = partIds === "__all__"
+    ? parts
+    : parts.filter(p => partIds.includes(p.id));
 
   if (displayParts.length === 0) return (
     <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155", border: "2px dashed #1e293b", borderRadius: 12 }}>
       <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
-      <p style={{ margin: 0, fontSize: 12 }}>上の「＋ 部品」ボタンで部品を追加してください</p>
+      <p style={{ margin: 0, fontSize: 12 }}>マトリクスビューで部品・サプライヤーを登録すると表示されます</p>
     </div>
   );
 
+  const NODE_W = 180, COL_GAP = 44;
+
   return (
-    <div ref={containerRef} style={{ overflowX: "auto", overflowY: "visible", position: "relative" }}>
-      {/* 部品間合流線ダイアログ */}
-      {linkDialog && (
-        <div style={{ background: "#0f172a", border: "1px solid #6366f1", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
-          <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 10 }}>
-            🔗 <strong>{linkDialog.fromLabel}</strong> から合流先を選択
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
-            {displayParts.map(function(part) {
-              if (part.id === linkDialog.fromPartId) return null;
-              return processes.map(function(proc, ci) {
-                var cell = getCell(part.id, ci);
-                var hasSup = cell && cell.suppliers && cell.suppliers.length > 0;
-                if (!hasSup) return null;
-                return (
-                  <button key={part.id + "_" + ci}
-                    onClick={function() { addCrossLink(linkDialog.fromPartId, linkDialog.fromProcIdx, part.id, ci); }}
-                    style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, cursor: "pointer", textAlign: "left" }}>
-                    {part.name} → {proc}
-                  </button>
-                );
-              });
-            })}
-          </div>
-          <button onClick={function() { setLinkDialog(null); }}
-            style={{ marginTop: 10, background: "none", border: "1px solid #334155", borderRadius: 7, color: "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>
-            キャンセル
-          </button>
-        </div>
-      )}
-
-      {/* SVGオーバーレイ：工程間矢印 + 部品間合流線 */}
-      {(svgLines.length > 0 || arrowLines.length > 0 || winnerArrows.length > 0) && (
-        <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible", minWidth: "100%", minHeight: "100%" }}>
-          <defs>
-            <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
-            </marker>
-            <marker id="gr-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill="#22c55e"/>
-            </marker>
-            <marker id="gy-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="#334155"/>
-            </marker>
-          </defs>
-          {/* 検討中ルート（グレー点線） */}
-          {winnerArrows.map(function(a) {
-            var mx = (a.x1 + a.x2) / 2;
-            var my = Math.min(a.y1, a.y2) - 20;
-            var pathD = a.skip
-              ? "M" + a.x1 + "," + a.y1 + " Q" + mx + "," + my + " " + a.x2 + "," + a.y2
-              : null;
-            return (
-              <g key={a.id} opacity={0.6}>
-                {a.skip ? (
-                  <path d={pathD} fill="none" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4,3"/>
-                ) : (
-                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#64748b" strokeWidth={1.5} strokeDasharray="4,3"/>
-                )}
-              </g>
-            );
-          })}
-          {/* 工程間矢印（スキップは曲線） */}
-          {arrowLines.map(function(a) {
-            var mx = (a.x1 + a.x2) / 2;
-            var my = Math.min(a.y1, a.y2) - 30;
-            var pathD = a.skip
-              ? "M" + a.x1 + "," + a.y1 + " Q" + mx + "," + my + " " + a.x2 + "," + a.y2
-              : null;
-            return (
-              <g key={a.id}>
-                {a.adopted && !a.skip && <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={7} opacity={0.12}/>}
-                {a.skip ? (
-                  <path d={pathD} fill="none"
-                    stroke="#22c55e" strokeWidth={2.5}
-                    strokeDasharray="6,3"
-                    markerEnd="url(#gr-arrow)" opacity={0.9}/>
-                ) : (
-                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                    stroke="#22c55e" strokeWidth={2.5}
-                    markerEnd="url(#gr-arrow)" opacity={1}/>
-                )}
-              </g>
-            );
-          })}
-          {/* 部品間合流線 */}
-          {svgLines.map(function(line) {
-            return (
-              <path key={line.id}
-                d={"M" + line.x1 + "," + line.y1 + " C" + (line.x1+60) + "," + line.y1 + " " + (line.x2-60) + "," + line.y2 + " " + line.x2 + "," + line.y2}
-                fill="none" stroke="#6366f1" strokeWidth={2.5} opacity={0.85} markerEnd="url(#cl-arrow)"/>
-            );
-          })}
-        </svg>
-      )}
-
-      {/* 合流線削除ボタン（DOM要素で実装、確実にクリック可） */}
-      {svgLines.map(function(line, idx) {
-        var mx = (line.x1 + line.x2) / 2;
-        var my = (line.y1 + line.y2) / 2;
-        return (
-          <div key={"del-" + line.id}
-            onClick={function() { removeCrossLink(line.id); }}
-            style={{ position: "absolute", left: mx - 10, top: my - 10, width: 20, height: 20, background: "#6366f1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 20, fontSize: 12, color: "#fff", fontWeight: 700, userSelect: "none" }}>
-            ×
-          </div>
-        );
-      })}
-
-      {/* 工程ヘッダー */}
-      <div style={{ display: "flex", marginBottom: 8, marginLeft: FLABEL_W, position: "relative", zIndex: 1 }}>
-        {processes.map(function(proc, ci) {
-          return (
-            <div key={ci} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-              <div style={{ width: FNODE_W, background: "#1e293b", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{proc}</span>
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+        <thead>
+          <tr>
+            {/* 部品ラベルヘッダー */}
+            <th style={{ minWidth: 130, maxWidth: 150, padding: "0 10px 10px 0", verticalAlign: "bottom" }}>
+              <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "7px 10px", textAlign: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>部品</span>
               </div>
-              {ci < processes.length - 1 && <div style={{ width: FNODE_GAP, flexShrink: 0 }}/>}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 部品行 */}
-      {displayParts.map(function(part, pi) {
-        var cat = categories.find(function(c) { return c.id === part.categoryId; });
-        var adoptedCost = processes.reduce(function(sum, proc, ci) {
-          var cell = getCell(part.id, ci);
-          var sel = cell && cell.suppliers ? cell.suppliers.find(function(s) { return s.id === cell.selected; }) : null;
-          return sel && sel.cost ? sum + parseFloat(sel.cost) : sum;
-        }, 0);
-        var targetCost = targetCostMap[part.id] || "";
-        var overBudget = targetCost && adoptedCost > parseFloat(targetCost);
-
-        var partIdx = parts.indexOf(part);
-
-        function movePart(dir) {
-          var idx = parts.indexOf(part);
-          var target = idx + dir;
-          if (target < 0 || target >= parts.length) return;
-          var next = parts.slice();
-          var tmp = next[idx]; next[idx] = next[target]; next[target] = tmp;
-          setParts(next);
-        }
-
-        return (
-          <div key={part.id} style={{ display: "flex", marginBottom: 10, alignItems: "flex-start", position: "relative", zIndex: 1 }}>
-            {/* 部品ラベル */}
-            <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid " + (cat ? cat.color + "44" : "#1e293b"), borderRadius: 10, padding: "10px 10px", boxSizing: "border-box" }}>
-              {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 3 }}>{cat.name}</div>}
-              {/* 部品名（インライン編集） */}
-              <input value={part.name}
-                onChange={function(e) {
-                  var next = parts.map(function(p) { return p.id === part.id ? Object.assign({}, p, { name: e.target.value }) : p; });
-                  setParts(next);
-                }}
-                style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #334155", color: "#f1f5f9", fontSize: 12, fontWeight: 800, outline: "none", marginBottom: 6, padding: "1px 0", boxSizing: "border-box" }}
-              />
-              {/* 上下移動・削除ボタン */}
-              <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                <button onClick={function() { movePart(-1); }}
-                  style={{ flex: 1, background: partIdx === 0 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: partIdx === 0 ? "#1e293b" : "#64748b", fontSize: 11, padding: "2px 0", cursor: partIdx === 0 ? "default" : "pointer" }}>↑</button>
-                <button onClick={function() { movePart(1); }}
-                  style={{ flex: 1, background: partIdx === parts.length - 1 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: partIdx === parts.length - 1 ? "#1e293b" : "#64748b", fontSize: 11, padding: "2px 0", cursor: partIdx === parts.length - 1 ? "default" : "pointer" }}>↓</button>
-                <button onClick={function() { showConfirm("「" + part.name + "」を削除しますか？", function() { removePart(part.id); }); }}
-                  style={{ width: 26, background: "#1e293b", border: "1px solid #ef444433", borderRadius: 4, color: "#ef4444", fontSize: 11, padding: "2px 0", cursor: "pointer" }}>×</button>
-              </div>
-              <div style={{ fontSize: 9, color: "#475569", marginBottom: 2 }}>目標コスト</div>
-              <input type="number" value={targetCost}
-                onChange={function(e) { setTargetCostMap(function(prev) { var n = Object.assign({}, prev); n[part.id] = e.target.value; return n; }); }}
-                placeholder="—"
-                style={{ width: "100%", background: "#1e293b", border: "1px solid " + (overBudget ? "#ef4444" : "#334155"), borderRadius: 5, color: "#e2e8f0", padding: "3px 5px", fontSize: 10, outline: "none", boxSizing: "border-box" }}
-              />
-              {adoptedCost > 0 && (
-                <div style={{ marginTop: 4, fontSize: 9, fontWeight: 700, color: overBudget ? "#ef4444" : "#22c55e" }}>
-                  採用計 ¥{adoptedCost.toLocaleString()}
-                  {overBudget && <div style={{ fontSize: 8, color: "#ef4444" }}>▲超過</div>}
-                </div>
-              )}
-            </div>
-
-            {/* 工程カラム */}
-            <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
-              {processes.map(function(proc, ci) {
-                var cell = getCell(part.id, ci);
-                var suppliers = cell && cell.suppliers ? cell.suppliers : [];
-                var selected = cell ? cell.selected : null;
-                var scores = suppliers.map(function(s) { return scoreSupplier(s, suppliers); });
-                var maxScore = Math.max.apply(null, scores.concat([0]));
-                return (
-                  <div key={ci} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-                    {/* 工程間スペース（矢印はSVGで描画） */}
-                    {ci > 0 && <div style={{ width: FNODE_GAP, flexShrink: 0 }}/>}
-
-                    {/* サプライヤーカード */}
-                    <div style={{ width: FNODE_W, position: "relative" }}>
-                      {suppliers.length === 0 ? (
-                        <div onClick={function() { onOpenModal(part.id, part.name, ci); }}
-                          style={{ minHeight: 80, border: "2px dashed #334155", borderRadius: 9, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#475569", fontSize: 13 }}>
-                          <div>＋</div>
-                          <div style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>タップして登録</div>
-                        </div>
-                      ) : (
-                        <div>
-                          {suppliers.map(function(s, si) {
-                            var isSel = s.id === selected;
-                            // candidates: cell.candidates は候補IDの配列
-                            var candidates = cell && cell.candidates ? cell.candidates : [];
-                            var isCandidate = candidates.indexOf(s.id) >= 0;
-                            // 状態: 採用 > 候補 > なし
-                            // クリックで: なし→候補→採用→なし
-                            var status = isSel ? "adopted" : isCandidate ? "candidate" : "none";
-                            var score = scores[si];
-                            var isWin = suppliers.length > 1 && score === maxScore && score > 0;
-                            var sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
-
-                            // 採用サプライヤーにrefを付ける（矢印線用）
-                            var refFn = isSel ? function(el) { if (el) nodeRefs.current[part.id + "_" + ci] = el; } : null;
-
-                            // 背景・枠色
-                            var bg = isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)"
-                                   : isCandidate ? "#0f1a2e"
-                                   : "#0a1220";
-                            var borderColor = isSel ? "#0ea5e9"
-                                           : isCandidate ? "#334155"
-                                           : "#1e293b";
-                            var borderW = isSel ? 2 : 1;
-                            var nameColor = isSel ? "#f1f5f9" : isCandidate ? "#cbd5e1" : "#475569";
-
-                            return (
-                              <div key={s.id}
-                                ref={function(el) { if (refFn) refFn(el); if (winRefFn) winRefFn(el); }}
-                                onClick={function() {
-                                  var newCandidates = candidates.slice();
-                                  var newSelected = selected;
-                                  if (status === "none") {
-                                    // なし → 候補
-                                    newCandidates.push(s.id);
-                                    newSelected = selected; // 採用は変えない
-                                  } else if (status === "candidate") {
-                                    // 候補 → 採用（他の採用を解除）
-                                    newSelected = s.id;
-                                  } else {
-                                    // 採用 → なし（候補からも外す）
-                                    newSelected = null;
-                                    newCandidates = newCandidates.filter(function(id) { return id !== s.id; });
-                                  }
-                                  setCell(part.id, ci, Object.assign({}, cell, { selected: newSelected, candidates: newCandidates }));
-                                }}
-                                style={{ marginBottom: 4, minHeight: 64, background: bg, border: borderW + "px solid " + borderColor, borderRadius: 9, padding: "8px 10px", cursor: "pointer", position: "relative", userSelect: "none", opacity: status === "none" ? 0.5 : 1 }}>
-                                {/* 状態バッジ */}
-                                {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
-                                {isCandidate && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#334155", color: "#94a3b8", fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>候補</div>}
-                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, right: 6, background: "#22c55e", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>検討</div>}
-                                {/* 状態インジケーター */}
-                                <div style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: "50%", background: isSel ? "#0ea5e9" : isCandidate ? "#64748b" : "#1e293b" }}/>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: nameColor, paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>{s.name || ("S" + (si+1))}</div>
-                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                  {s.cost && <span style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(s.cost).toLocaleString()}</span>}
-                                  {s.leadTime && <span style={{ fontSize: 10, color: "#64748b" }}>LT:{s.leadTime}日</span>}
-                                </div>
-                                <div style={{ marginTop: 5, height: 3, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
-                                  <div style={{ width: score + "%", height: "100%", background: sc, borderRadius: 2 }}/>
-                                </div>
-                                {/* タップヒント */}
-                                <div style={{ position: "absolute", bottom: 4, right: 6, fontSize: 8, color: "#334155" }}>
-                                  {status === "none" ? "tap→候補" : status === "candidate" ? "tap→採用" : "tap→解除"}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <div style={{ display: "flex", gap: 4, marginTop: 2 }}>
-                            <div onClick={function() { onOpenModal(part.id, part.name, ci); }}
-                              style={{ flex: 1, border: "1px dashed #334155", borderRadius: 7, padding: "3px 0", textAlign: "center", cursor: "pointer", color: "#475569", fontSize: 10 }}>
-                              ＋ 候補
-                            </div>
-                            <div onClick={function() { setLinkDialog({ fromPartId: part.id, fromProcIdx: ci, fromLabel: part.name + " / " + proc }); }}
-                              title="部品間合流線を引く"
-                              style={{ width: 28, border: "1px dashed #6366f155", borderRadius: 7, padding: "3px 0", textAlign: "center", cursor: "pointer", color: "#6366f1", fontSize: 12 }}>
-                              🔗
-                            </div>
-                          </div>
-                        </div>
-                      )}
+            </th>
+            {/* 工程ヘッダー（→ 付き） */}
+            <th style={{ padding: "0 0 10px 0", verticalAlign: "bottom" }}>
+              <div style={{ display: "flex", gap: COL_GAP }}>
+                {processes.map((proc, ci) => (
+                  <div key={ci} style={{ width: NODE_W, flexShrink: 0, display: "flex", alignItems: "center", gap: 0 }}>
+                    <div style={{ flex: 1, background: "#1e293b", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{proc}</span>
                     </div>
+                    {ci < processes.length - 1 && (
+                      <div style={{ width: COL_GAP, textAlign: "center", color: "#334155", fontSize: 16, flexShrink: 0 }}>→</div>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* 凡例 */}
-      <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 10, color: "#475569", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#22c55e" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #22c55e", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>採用ルート（緑線）</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#6366f1" }}/>部品間合流線（🔗で追加、×で削除）</div>
-        <div style={{ color: "#334155" }}>カードをタップ: なし → 候補 → 採用 → なし</div>
-      </div>
+                ))}
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {displayParts.map(part => (
+            <FlowPartRow
+              key={part.id}
+              part={part}
+              cat={categories.find(c => c.id === part.categoryId)}
+              processes={processes}
+              getCell={getCell}
+              setCell={setCell}
+              targetCostMap={targetCostMap}
+              setTargetCostMap={setTargetCostMap}
+            />
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1238,10 +1017,6 @@ function App() {
     saveThemes(next);
   };
 
-  const setMatrix = (newMatrix) => {
-    updateActiveData({ matrix: newMatrix });
-  };
-
   const handleExportBackup = () => {
     exportBackup(theme, categories, parts, processes, matrix, archive);
   };
@@ -1286,8 +1061,7 @@ function App() {
     saveToArchive(snapshot);
     setArchive(loadArchive());
     // このテーマをリセット（削除ではなくクリア）
-    const blankData = makeBlankThemeData();
-    updateActiveData({ ...blankData, theme: { ...blankData.theme, name: "新規開発テーマ" }, originArchiveId: null });
+    updateActiveData({ ...makeBlankThemeData(theme.name + " (完了済)"), theme: { ...theme, name: theme.name + " (完了済)" } });
     setView("archive");
   };
 
@@ -1305,94 +1079,43 @@ function App() {
 
   // アーカイブから新規テーマとして再編集
   const editFromArchive = (snap) => {
-    const newTheme = { ...snap.theme, id: newId(), name: snap.theme.name };
+    const newTheme = { ...snap.theme, id: newId(), name: snap.theme.name + " (再編集)" };
     const newEntry = {
       theme: newTheme,
       categories: snap.categories,
       parts: snap.parts,
       processes: snap.processes,
       matrix: snap.matrix,
-      originArchiveId: snap.id,   // 元のアーカイブIDを記録
     };
     const next = [...themes, newEntry];
     setThemesRaw(next);
     saveThemes(next);
     setActiveThemeId(newTheme.id);
-    setView("flow");
+    setView("matrix");
   };
 
-  // 再編集テーマをアーカイブに保存（上書き or 別名）
-  const saveEditedToArchive = (overwrite) => {
-    const activeEntry = themes.find(t => t.theme.id === activeThemeId);
-    const origId = activeEntry?.originArchiveId;
-
-    const completedCellsNow = parts.reduce((cnt, part) =>
-      cnt + processes.filter((_, ci) => getCell(part.id, ci).selected != null).length, 0);
-    const totalCellsNow = parts.length * processes.length;
-    const totalCostNow = parts.reduce((sum, part) =>
-      sum + processes.reduce((s2, _, ci) => {
-        const cell = getCell(part.id, ci);
-        const sel = cell.suppliers?.find(s => s.id === cell.selected);
-        return sel?.cost ? s2 + parseFloat(sel.cost) : s2;
-      }, 0), 0);
-
-    const snapshot = {
-      id: (overwrite && origId) ? origId : newId(),
-      archivedAt: new Date().toISOString(),
-      theme, categories, parts, processes, matrix,
-      completedCells: completedCellsNow,
-      totalCells: totalCellsNow,
-      totalCost: totalCostNow,
-    };
-
-    if (overwrite && origId) {
-      // 元のアーカイブを上書き
-      const list = loadArchive().map(s => s.id === origId ? snapshot : s);
-      localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list));
-    } else {
-      // 新規追加
-      saveToArchive(snapshot);
-    }
-    setArchive(loadArchive());
-
-    // originArchiveId を更新して次回も上書き可能にする
-    updateActiveData({ originArchiveId: snapshot.id });
-
-    setView("archive");
-  };
-
-  const [pdfMode, setPdfMode] = useState("all"); // "all" | "each"
-
+  // PDF出力ラッパー — 全部品モードは部品ごとに別ウィンドウで連続出力
   const handleExportPdf = () => {
-    var targetParts;
-    if (!flowPartId || flowPartId === "__all__") {
-      targetParts = parts;
-    } else if (flowPartId.indexOf("cat:") === 0) {
-      var catId = flowPartId.slice(4);
-      targetParts = parts.filter(p => p.categoryId === catId);
-    } else {
-      targetParts = parts.filter(p => p.id === flowPartId);
-    }
+    const targetParts = (!flowPartId || flowPartId === "__all__") ? parts : [currentFlowPart].filter(Boolean);
     if (!targetParts.length) return;
-    exportPDF(pdfMode, theme.name, targetParts, categories, processes, getCell);
+    targetParts.forEach(part => {
+      const cols = processes.map((proc, ci) => {
+        const cell = getCell(part.id, ci);
+        return { proc: proc.name, ci, suppliers: cell?.suppliers || [], selected: cell?.selected ?? null };
+      });
+      exportFlowPDF(part.name, processes.map(p => p.name), cols);
+    });
   };
 
   const partDrag = useDragSort(parts, setParts);
   const procDrag = useDragSort(processes, setProcesses);
 
-  // 実効大分類ID：newPartCatIdが空 or 存在しないカテゴリなら先頭に fallback
-  const resolvedPartCatId = (newPartCatId && categories.find(c => c.id === newPartCatId))
-    ? newPartCatId
-    : categories[0]?.id ?? "";
-
   const addPart = () => {
     const name = newPartName.trim();
-    const catId = resolvedPartCatId;
+    const catId = newPartCatId || categories[0]?.id;
     if (!name || !catId) return;
     setParts([...parts, { id: newId(), categoryId: catId, name }]);
     setNewPartName("");
-    // 追加後も選択中の大分類を維持（stateを確定値にセット）
-    setNewPartCatId(catId);
   };
   const removePart = (id) => setParts(parts.filter(p => p.id !== id));
 
@@ -1443,30 +1166,10 @@ function App() {
             📊 Excel
           </button>
           {view === "flow" && (
-            <>
-              <select value={pdfMode} onChange={e => setPdfMode(e.target.value)}
-                style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 11, outline: "none", cursor: "pointer" }}>
-                <option value="all">全部品まとめて</option>
-                <option value="each">部品ごとに改ページ</option>
-              </select>
-              <button onClick={handleExportPdf}
-                style={{ background: "#450a0a", border: "1px solid #ef444433", borderRadius: 7, color: "#ef4444", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
-                📄 PDF出力
-              </button>
-            </>
-          )}
-          {/* 再編集テーマの場合: 上書き・別名保存ボタン */}
-          {themes.find(t => t.theme.id === activeThemeId)?.originArchiveId && (
-            <>
-              <button onClick={() => showConfirm("元のアーカイブを上書き保存しますか？", () => saveEditedToArchive(true))}
-                style={{ background: "#0f2a1a", border: "1px solid #22c55e55", borderRadius: 7, color: "#22c55e", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
-                💾 上書き保存
-              </button>
-              <button onClick={() => showConfirm("新しいアーカイブとして別名保存しますか？", () => saveEditedToArchive(false))}
-                style={{ background: "#0c2040", border: "1px solid #0ea5e955", borderRadius: 7, color: "#0ea5e9", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
-                💾 別名保存
-              </button>
-            </>
+            <button onClick={handleExportPdf}
+              style={{ background: "#450a0a", border: "1px solid #ef444433", borderRadius: 7, color: "#ef4444", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              📄 PDF{(!flowPartId || flowPartId === "__all__") ? `（全${parts.length}部品）` : ""}
+            </button>
           )}
           <button onClick={() => completeAndArchive()}
             style={{ background: "#1c1c3a", border: "1px solid #6366f133", borderRadius: 7, color: "#a5b4fc", padding: "6px 11px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -1563,7 +1266,7 @@ function App() {
 
         {/* ── テーマ設定 ── */}
         {view === "theme" && (
-          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} showConfirm={showConfirm} />
+          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} />
         )}
 
         {/* ── マトリクス ── */}
@@ -1573,7 +1276,7 @@ function App() {
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <select
-                  value={resolvedPartCatId}
+                  value={newPartCatId || categories[0]?.id || ""}
                   onChange={e => setNewPartCatId(e.target.value)}
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}
                 >
@@ -1677,7 +1380,7 @@ function App() {
             {/* ── ツールバー：部品・工程追加 ── */}
             <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <select value={resolvedPartCatId} onChange={e => setNewPartCatId(e.target.value)}
+                <select value={newPartCatId || categories[0]?.id || ""} onChange={e => setNewPartCatId(e.target.value)}
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -1693,112 +1396,51 @@ function App() {
               </div>
             </div>
 
-            {/* ── 大分類タブ ── */}
-            <div style={{ borderBottom: "2px solid #1e293b", marginBottom: 16 }}>
-              <div style={{ display: "flex", gap: 0, overflowX: "auto" }}>
-                {/* すべてタブ */}
-                <button onClick={() => setFlowPartId("__all__")}
-                  style={{ background: "none", border: "none", borderBottom: `3px solid ${(!flowPartId || flowPartId === "__all__") ? "#6366f1" : "transparent"}`, color: (!flowPartId || flowPartId === "__all__") ? "#e2e8f0" : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: (!flowPartId || flowPartId === "__all__") ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2 }}>
-                  すべて
-                </button>
-                {/* 大分類タブ */}
-                {categories.map(cat => {
-                  const catParts = parts.filter(p => p.categoryId === cat.id);
-                  if (!catParts.length) return null;
-                  const isActive = flowPartId === "cat:" + cat.id || catParts.some(p => p.id === flowPartId);
-                  return (
-                    <button key={cat.id} onClick={() => { setFlowPartId("cat:" + cat.id); setNewPartCatId(cat.id); }}
-                      style={{ background: "none", border: "none", borderBottom: `3px solid ${isActive ? cat.color : "transparent"}`, color: isActive ? cat.color : "#475569", padding: "8px 16px", fontSize: 12, fontWeight: isActive ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -2, display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
-                      {cat.name}
-                    </button>
-                  );
-                })}
-              </div>
-              {/* 選択中の大分類内の部品タブ（2段目） */}
-              {flowPartId && flowPartId !== "__all__" && (() => {
-                const activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
-                  : parts.find(p => p.id === flowPartId)?.categoryId;
-                const activeCat = categories.find(c => c.id === activeCatId);
-                const catParts = parts.filter(p => p.categoryId === activeCatId);
-                if (!catParts.length || !activeCat) return null;
+            {/* ── 大分類フィルタ（全部品 / 大分類 / 個別部品） ── */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+              {/* 全部品ボタン */}
+              <button onClick={() => setFlowPartId("__all__")}
+                style={{ background: (!flowPartId || flowPartId === "__all__") ? "#1e293b" : "transparent", border: `1px solid ${(!flowPartId || flowPartId === "__all__") ? "#475569" : "#1e293b"}`, borderRadius: 20, color: (!flowPartId || flowPartId === "__all__") ? "#e2e8f0" : "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer", fontWeight: (!flowPartId || flowPartId === "__all__") ? 700 : 400 }}>
+                すべて
+              </button>
+              {/* 大分類ごとに色ドット＋部品ボタン */}
+              {categories.map(cat => {
+                const catParts = parts.filter(p => p.categoryId === cat.id);
+                if (!catParts.length) return null;
+                const isActiveCat = catParts.some(p => p.id === flowPartId);
                 return (
-                  <div style={{ display: "flex", gap: 0, paddingLeft: 8, overflowX: "auto", borderTop: "1px solid #1e293b" }}>
+                  <div key={cat.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "#0a1220", border: `1px solid ${isActiveCat ? cat.color + "66" : "#1e293b"}`, borderRadius: 20, padding: "2px 6px 2px 8px" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, color: cat.color, fontWeight: 700, marginRight: 2 }}>{cat.name}</span>
                     {catParts.map(part => (
-                      <button key={part.id} onClick={() => setFlowPartId(part.id)}
-                        style={{ background: "none", border: "none", borderBottom: `2px solid ${flowPartId === part.id ? activeCat.color : "transparent"}`, color: flowPartId === part.id ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: flowPartId === part.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
+                      <button key={part.id} onClick={() => setFlowPartId(flowPartId === part.id ? "__all__" : part.id)}
+                        style={{ background: flowPartId === part.id ? cat.color + "33" : "transparent", border: `1px solid ${flowPartId === part.id ? cat.color : "#334155"}`, borderRadius: 14, color: flowPartId === part.id ? cat.color : "#64748b", padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
                         {part.name}
                       </button>
                     ))}
-                    <button onClick={() => { setNewPartCatId(activeCatId); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }}
-                      style={{ background: "none", border: "none", color: "#334155", padding: "5px 8px", fontSize: 14, cursor: "pointer" }}>＋</button>
+                    <button onClick={() => { setNewPartCatId(cat.id); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }} title="この大分類に部品追加"
+                      style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1 }}>＋</button>
                   </div>
                 );
-              })()}
+              })}
             </div>
 
-            {/* ── 工程管理バー（フロー図直上） ── */}
-            <div style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 14px", marginBottom: 10, overflowX: "auto" }}>
-              <div style={{ fontSize: 10, color: "#475569", marginBottom: 7 }}>工程の順番・削除</div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
-                {processes.map(function(proc, ci) {
-                  function swapProc(fromIdx, toIdx) {
-                    // processes と matrix を同時に updateActiveData で更新
-                    var nextProcs = processes.slice();
-                    var tmp = nextProcs[fromIdx]; nextProcs[fromIdx] = nextProcs[toIdx]; nextProcs[toIdx] = tmp;
-                    var nextMatrix = Object.assign({}, matrix);
-                    parts.forEach(function(part) {
-                      var keyA = part.id + "_" + fromIdx;
-                      var keyB = part.id + "_" + toIdx;
-                      var cellA = matrix[keyA];
-                      var cellB = matrix[keyB];
-                      if (cellA) { nextMatrix[keyB] = cellA; } else { delete nextMatrix[keyB]; }
-                      if (cellB) { nextMatrix[keyA] = cellB; } else { delete nextMatrix[keyA]; }
-                    });
-                    updateActiveData({ processes: nextProcs, matrix: nextMatrix });
-                  }
-                  function moveLeft() { if (ci > 0) swapProc(ci, ci - 1); }
-                  function moveRight() { if (ci < processes.length - 1) swapProc(ci, ci + 1); }
-                  function delProc() {
-                    showConfirm("「" + proc.name + "」を削除しますか？", function() { removeProcess(proc.id); });
-                  }
-                  return (
-                    <div key={proc.id} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 8px", display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>{proc.name}</span>
-                        <button onClick={moveLeft} style={{ background: ci === 0 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: ci === 0 ? "#1e293b" : "#64748b", cursor: ci === 0 ? "default" : "pointer", fontSize: 13, padding: "1px 7px", lineHeight: 1 }}>←</button>
-                        <button onClick={moveRight} style={{ background: ci === processes.length - 1 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: ci === processes.length - 1 ? "#1e293b" : "#64748b", cursor: ci === processes.length - 1 ? "default" : "pointer", fontSize: 13, padding: "1px 7px", lineHeight: 1 }}>→</button>
-                        <button onClick={delProc} style={{ background: "#1e293b", border: "1px solid #ef444433", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: 13, padding: "1px 7px", lineHeight: 1 }}>×</button>
-                      </div>
-                      {ci < processes.length - 1 && <span style={{ color: "#334155", fontSize: 14, flexShrink: 0 }}>›</span>}
-                    </div>
-                  );
-                })}
-              </div>
+            <div style={{ fontSize: 10, color: "#334155", marginBottom: 10 }}>
+              破線：候補ルート　実線（緑）：採用ルート　ノードクリックで採用切替
             </div>
 
             {/* ── フロー図本体 ── */}
-            {(() => {
-              var flowPartIds;
-              if (!flowPartId || flowPartId === "__all__") {
-                flowPartIds = "__all__";
-              } else if (flowPartId.indexOf("cat:") === 0) {
-                var catId = flowPartId.slice(4);
-                flowPartIds = parts.filter(function(p) { return p.categoryId === catId; }).map(function(p) { return p.id; });
-              } else {
-                flowPartIds = [flowPartId];
-              }
-              return (
+            {(!flowPartId || flowPartId === "__all__") ? (
+              <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
+                <FlowView partIds="__all__" parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
+              </div>
+            ) : (
+              currentFlowPart && (
                 <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                  <FlowView partIds={flowPartIds} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
-                  themeId={activeThemeId}
-                  setParts={setParts}
-                  removePart={removePart}
-                  showConfirm={showConfirm}
-                  />
+                  <FlowView partIds={[currentFlowPart.id]} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} />
                 </div>
-              );
-            })()}
+              )
+            )}
 
             {/* ── 凡例 ── */}
             <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 10, color: "#475569" }}>
@@ -1964,7 +1606,6 @@ function App() {
                             style={{ background: "linear-gradient(135deg,#6366f1,#0ea5e9)", border: "none", borderRadius: 7, color: "#fff", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             ✏ 再編集
                           </button>
-                          <div style={{ fontSize: 9, color: "#475569", textAlign: "center", marginTop: 2 }}>編集後に上書き/別名保存</div>
                           <button onClick={() => restoreArchiveItem(snap)}
                             style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                             🔄 上書き復元
@@ -1996,7 +1637,6 @@ function App() {
           cellData={getCell(modal.partId, modal.processIdx)}
           onUpdate={data => setCell(modal.partId, modal.processIdx, data)}
           onClose={() => setModal(null)}
-          showConfirm={showConfirm}
         />
       )}
 
@@ -2022,7 +1662,8 @@ function App() {
   );
 }
 
-const root=ReactDOM.createRoot(document.getElementById('root'));
+const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
   </script>
-</body></html>
+</body>
+</html>
