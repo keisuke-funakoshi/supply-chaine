@@ -712,9 +712,9 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
     if (!sel) return null;
     var eRect = sel.getBoundingClientRect();
     var cRect = cont.getBoundingClientRect();
-    var sl = cont.scrollLeft || 0, st = cont.scrollTop || 0;
+    var sl = cont.scrollLeft || 0;
     return { left: eRect.left - cRect.left + sl, right: eRect.right - cRect.left + sl,
-             top: eRect.top - cRect.top + st, bottom: eRect.bottom - cRect.top + st,
+             top: eRect.top - cRect.top, bottom: eRect.bottom - cRect.top,
              width: eRect.width, height: eRect.height };
   }
 
@@ -804,9 +804,12 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
   useEffect(function() {
     window.addEventListener('scroll', recalcLines, true);
     window.addEventListener('resize', recalcLines);
+    var contEl = containerRef.current;
+    if (contEl) contEl.addEventListener('scroll', recalcLines);
     return function() {
       window.removeEventListener('scroll', recalcLines, true);
       window.removeEventListener('resize', recalcLines);
+      if (contEl) contEl.removeEventListener('scroll', recalcLines);
     };
   }, [crossLinks, displayParts.length, processes.length]);
 
@@ -851,7 +854,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
 
       {/* SVGオーバーレイ：採用線 + 検討点線 + 候補点線 + 合流線 */}
       {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0) && (
-        <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible", minWidth: "100%", minHeight: "100%" }}>
+        <svg style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 10, overflow: "visible", width: "10000px", height: "10000px" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
