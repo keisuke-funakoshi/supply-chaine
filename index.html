@@ -25,7 +25,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="text/babel" data-presets="env,react">
 const {useState,useRef,useCallback,useEffect,useMemo}=React;
-// ─── ユーティリティ ───────────────────────────────────────────────────
+// --- ユーティリティ ---------------------------------------------------
 const SCORE_WEIGHTS = { cost: 0.35, leadTime: 0.25, quality: 0.25, moq: 0.15 };
 let uid = 300;
 const newId = () => `id${uid++}`;
@@ -66,7 +66,7 @@ function useDragSort(items, setItems) {
   };
 }
 
-// ─── アーカイブ (localStorage) ────────────────────────────────────────
+// --- アーカイブ (localStorage) ----------------------------------------
 const ARCHIVE_KEY = "shoury_archive_v1";
 function loadArchive() {
   try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]"); } catch { return []; }
@@ -81,7 +81,7 @@ function deleteFromArchive(id) {
   localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list));
 }
 
-// ─── バックアップ（JSONエクスポート/インポート） ───────────────────────
+// --- バックアップ（JSONエクスポート/インポート） -----------------------
 function exportBackup(theme, categories, parts, processes, matrix, archive) {
   const data = {
     version: 1,
@@ -112,7 +112,7 @@ function importBackup(file, onSuccess, onError) {
   reader.readAsText(file);
 }
 
-// ─── Excel出力（図形矢印付き） ─────────────────────────────────────────
+// --- Excel出力（図形矢印付き） -----------------------------------------
 async function exportExcel(theme, categories, parts, processes, getCell) {
   const XLSX = { utils: window.XLSX.utils, writeFile: window.XLSX.writeFile };
 
@@ -184,7 +184,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 
     // Summary section
     aoa.push([]);
-    aoa.push(["── コスト集計 ──"]);
+    aoa.push(["-- コスト集計 --"]);
     const summaryHeader = ["部品名", ...processes.map(p => p.name), "合計"];
     aoa.push(summaryHeader);
     catParts.forEach(part => {
@@ -243,8 +243,8 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
   XLSX.writeFile(wb, `${theme.name}_商流検討.xlsx`);
 }
 
-// ─── PDF出力（フロー図SVGをPDF化） ────────────────────────────────────
-// ─── PDF出力（白背景・全部品/部品ごと） ─────────────────────────────
+// --- PDF出力（フロー図SVGをPDF化） ------------------------------------
+// --- PDF出力（白背景・全部品/部品ごと） -----------------------------
 function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell, crossLinks) {
   var procNames = processes.map(function(p){return p.name;});
   var NW=180, NH=68, NGAP=6, CGAP=44, LW=120, HDRH=32, PAD=14, ROW_GAP=20;
@@ -504,7 +504,7 @@ function exportPDF(mode, themeName, targetParts, categories, processes, getCell,
   var win = window.open('','_blank');
   if (win){win.document.write(html);win.document.close();}
 }
-// ─── サンプルデータ ───────────────────────────────────────────────────
+// --- サンプルデータ ---------------------------------------------------
 // 階層: テーマ > 大分類(category) > 部品(part) > 工程×サプライヤ
 const SAMPLE_THEME = { id: "t1", name: "次世代スマートセンサー開発" };
 
@@ -600,10 +600,10 @@ const SAMPLE_MATRIX = {
   ]},
 };
 
-// ─── カラーパレット ───────────────────────────────────────────────────
+// --- カラーパレット ---------------------------------------------------
 const CAT_COLORS = ["#6366f1","#0ea5e9","#f59e0b","#22c55e","#ec4899","#8b5cf6","#14b8a6"];
 
-// ─── ScoreBar ────────────────────────────────────────────────────────
+// --- ScoreBar --------------------------------------------------------
 function ScoreBar({ value }) {
   const color = value >= 70 ? "#22c55e" : value >= 40 ? "#f59e0b" : "#ef4444";
   return (
@@ -616,8 +616,8 @@ function ScoreBar({ value }) {
   );
 }
 
-// ─── テーマ/大分類設定パネル ──────────────────────────────────────────
-function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts, showConfirm }) {
+// --- テーマ/大分類設定パネル ------------------------------------------
+function ThemePanel({ theme, setTheme, categories, setCategories, subCategories, setSubCategories, parts, setParts, showConfirm }) {
   const [newCatName, setNewCatName] = useState("");
   const drag = useDragSort(categories, setCategories);
 
@@ -670,6 +670,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
           {categories.map((cat, i) => {
             const partCount = parts.filter(p => p.categoryId === cat.id).length;
             return (
+              <div key={cat.id + "_wrap"}>
               <div
                 key={cat.id}
                 draggable
@@ -690,6 +691,31 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
                   onClick={() => showConfirm(`「${cat.name}」を削除しますか？（この大分類に属する部品もすべて削除されます）`, () => removeCategory(cat.id))}
                   style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 2 }}
                 >×</button>
+              </div>
+              {/* 中分類リスト */}
+              <div style={{ marginTop: 8, paddingLeft: 10, borderLeft: "2px solid " + cat.color + "33" }}>
+                <div style={{ fontSize: 10, color: "#64748b", marginBottom: 5 }}>中分類</div>
+                {subCategories.filter(sc => sc.categoryId === cat.id).map(sc => (
+                  <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
+                    <input value={sc.name}
+                      onChange={e => setSubCategories(subCategories.map(function(s){ return s.id===sc.id ? Object.assign({},s,{name:e.target.value}) : s; }))}
+                      style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }} />
+                    <button onClick={() => showConfirm("「" + sc.name + "」を削除しますか？", () => {
+                        setSubCategories(subCategories.filter(s => s.id !== sc.id));
+                        setParts(parts.map(function(p){ return p.subCategoryId===sc.id ? Object.assign({},p,{subCategoryId:null}) : p; }));
+                      })}
+                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
+                  </div>
+                ))}
+                <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+                  <input id={"new-subcat-" + cat.id} placeholder="中分類名を入力"
+                    style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); var v = e.target.value.trim(); if (v) { setSubCategories(subCategories.concat([{ id: newId(), categoryId: cat.id, name: v }])); e.target.value = ""; } }}} />
+                  <button onClick={() => { var inp = document.getElementById("new-subcat-" + cat.id); if (inp && inp.value.trim()) { setSubCategories(subCategories.concat([{ id: newId(), categoryId: cat.id, name: inp.value.trim() }])); inp.value = ""; }}}
+                    style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", padding: "3px 10px", fontSize: 11, cursor: "pointer" }}>＋</button>
+                </div>
+              </div>
               </div>
             );
           })}
@@ -714,7 +740,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
   );
 }
 
-// ─── セル詳細モーダル ─────────────────────────────────────────────────
+// --- セル詳細モーダル -------------------------------------------------
 function CellModal({ partName, processName, cellData, onUpdate, onClose, showConfirm }) {
   const suppliers = cellData?.suppliers || [];
   const selected = cellData?.selected ?? null;
@@ -817,7 +843,7 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
   );
 }
 
-// ─── マトリクスセル ───────────────────────────────────────────────────
+// --- マトリクスセル ---------------------------------------------------
 function MatrixCell({ cellData, onClick }) {
   const suppliers = cellData?.suppliers || [];
   const selected = cellData?.selected ?? null;
@@ -848,15 +874,30 @@ function MatrixCell({ cellData, onClick }) {
   );
 }
 
-// ─── フロービュー ────────────────────────────────────────────────────
+// --- フロービュー ----------------------------------------------------
 const CROSS_LINKS_KEY = "shoury_crosslinks_v1";
-function loadCrossLinks() { try { return JSON.parse(localStorage.getItem(CROSS_LINKS_KEY) || "{}"); } catch { return {}; } }
-function saveCrossLinks(data) { localStorage.setItem(CROSS_LINKS_KEY, JSON.stringify(data)); }
+function loadCrossLinks() {
+  try { return JSON.parse(localStorage.getItem(CROSS_LINKS_KEY) || "{}"); } catch(e) { return {}; }
+}
+function saveCrossLinks(data) {
+  localStorage.setItem(CROSS_LINKS_KEY, JSON.stringify(data));
+}
 
 const FNODE_W = 180, FNODE_GAP = 40, FLABEL_W = 148;
 
-function FlowView({ partIds, parts, setParts, removePart, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId, showConfirm }) {
+function FlowView({ partIds, parts, setParts, removePart, categories, subCategories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId, showConfirm }) {
   var displayParts = partIds === "__all__" ? parts : parts.filter(function(p) { return partIds.indexOf(p.id) >= 0; });
+
+  // 大分類でグループ化
+  var groups = {};
+  var groupOrder = [];
+  displayParts.forEach(function(part) {
+    if (!groups[part.categoryId]) {
+      groups[part.categoryId] = [];
+      groupOrder.push(part.categoryId);
+    }
+    groups[part.categoryId].push(part);
+  });
   var [crossLinks, setCrossLinksRaw] = useState(function() {
     var all = loadCrossLinks(); return all[themeId] || [];
   });
@@ -1111,201 +1152,184 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
       </div>
 
       {/* 部品行 */}
-      {displayParts.map(function(part, pi) {
-        var cat = categories.find(function(c) { return c.id === part.categoryId; });
-        var adoptedCost = processes.reduce(function(sum, proc, ci) {
-          var cell = getCell(part.id, ci);
-          var sel = cell && cell.suppliers ? cell.suppliers.find(function(s) { return s.id === cell.selected; }) : null;
-          return sel && sel.cost ? sum + parseFloat(sel.cost) : sum;
-        }, 0);
-        var targetCost = targetCostMap[part.id] || "";
-        var overBudget = targetCost && adoptedCost > parseFloat(targetCost);
+      
+      {/* 大分類グループ表示 */}
+      {groupOrder.map(function(catId) {
+          var groupParts = groups[catId];
+          var cat = categories.find(function(c){ return c.id === catId; });
 
-        var partIdx = parts.indexOf(part);
-
-        function movePart(dir) {
-          var idx = parts.indexOf(part);
-          var target = idx + dir;
-          if (target < 0 || target >= parts.length) return;
-          var next = parts.slice();
-          var tmp = next[idx]; next[idx] = next[target]; next[target] = tmp;
-          setParts(next);
-        }
-
-        return (
-          <div key={part.id} style={{ display: "flex", marginBottom: 10, alignItems: "flex-start", position: "relative", zIndex: 1 }}>
-            {/* 部品ラベル */}
-            <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid " + (cat ? cat.color + "44" : "#1e293b"), borderRadius: 10, padding: "10px 10px", boxSizing: "border-box" }}>
-              {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 3 }}>{cat.name}</div>}
-              {/* 部品名（インライン編集） */}
-              <input value={part.name}
-                onChange={function(e) {
-                  var next = parts.map(function(p) { return p.id === part.id ? Object.assign({}, p, { name: e.target.value }) : p; });
-                  setParts(next);
-                }}
-                style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #334155", color: "#f1f5f9", fontSize: 12, fontWeight: 800, outline: "none", marginBottom: 6, padding: "1px 0", boxSizing: "border-box" }}
-              />
-              {/* 上下移動・削除ボタン */}
-              <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                <button onClick={function() { movePart(-1); }}
-                  style={{ flex: 1, background: partIdx === 0 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: partIdx === 0 ? "#1e293b" : "#64748b", fontSize: 11, padding: "2px 0", cursor: partIdx === 0 ? "default" : "pointer" }}>↑</button>
-                <button onClick={function() { movePart(1); }}
-                  style={{ flex: 1, background: partIdx === parts.length - 1 ? "none" : "#1e293b", border: "1px solid #334155", borderRadius: 4, color: partIdx === parts.length - 1 ? "#1e293b" : "#64748b", fontSize: 11, padding: "2px 0", cursor: partIdx === parts.length - 1 ? "default" : "pointer" }}>↓</button>
-                <button onClick={function() { showConfirm("「" + part.name + "」を削除しますか？", function() { removePart(part.id); }); }}
-                  style={{ width: 26, background: "#1e293b", border: "1px solid #ef444433", borderRadius: 4, color: "#ef4444", fontSize: 11, padding: "2px 0", cursor: "pointer" }}>×</button>
-              </div>
-              <div style={{ fontSize: 9, color: "#475569", marginBottom: 2 }}>目標コスト</div>
-              <input type="number" value={targetCost}
-                onChange={function(e) { setTargetCostMap(function(prev) { var n = Object.assign({}, prev); n[part.id] = e.target.value; return n; }); }}
-                placeholder="—"
-                style={{ width: "100%", background: "#1e293b", border: "1px solid " + (overBudget ? "#ef4444" : "#334155"), borderRadius: 5, color: "#e2e8f0", padding: "3px 5px", fontSize: 10, outline: "none", boxSizing: "border-box" }}
-              />
-              {adoptedCost > 0 && (
-                <div style={{ marginTop: 4, fontSize: 9, fontWeight: 700, color: overBudget ? "#ef4444" : "#22c55e" }}>
-                  採用計 ¥{adoptedCost.toLocaleString()}
-                  {overBudget && <div style={{ fontSize: 8, color: "#ef4444" }}>▲超過</div>}
+          return (
+            <div key={catId} style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "stretch" }}>
+                {/* 大分類ボックス（縦に伸びる） */}
+                <div style={{ width: 80, flexShrink: 0, background: "#0f172a", border: "2px solid " + (cat ? cat.color + "88" : "#1e293b"), borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 6, padding: "8px 4px" }}>
+                  {cat && (
+                    <div style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 12, fontWeight: 800, color: cat.color, letterSpacing: 2 }}>{cat.name}</div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* 工程カラム */}
-            <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
-              {processes.map(function(proc, ci) {
-                var cell = getCell(part.id, ci);
-                var suppliers = cell && cell.suppliers ? cell.suppliers : [];
-                var selected = cell ? cell.selected : null;
-                var scores = suppliers.map(function(s) { return scoreSupplier(s, suppliers); });
-                var maxScore = Math.max.apply(null, scores.concat([0]));
-                return (
-                  <div key={ci} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-                    {/* 工程間スペース（矢印はSVGで描画） */}
-                    {ci > 0 && <div style={{ width: FNODE_GAP, flexShrink: 0 }}/>}
+                {/* 中分類+部品列 */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {groupParts.map(function(part, pi) {
+                    var sc = subCategories.find(function(s){ return s.id === part.subCategoryId; });
+                    var cell0 = getCell(part.id, 0);
+                    var adoptedCost = processes.reduce(function(sum, proc, ci) {
+                      var cell = getCell(part.id, ci);
+                      var sel = cell && cell.suppliers ? cell.suppliers.find(function(s){ return s.id === cell.selected; }) : null;
+                      return sel && sel.cost ? sum + parseFloat(sel.cost) : sum;
+                    }, 0);
+                    var targetCost = targetCostMap[part.id] || "";
+                    var overBudget = targetCost && adoptedCost > parseFloat(targetCost);
 
-                    {/* サプライヤーカード */}
-                    <div style={{ width: FNODE_W, position: "relative" }}>
-                      {suppliers.length === 0 ? (
-                        <div onClick={function() { onOpenModal(part.id, part.name, ci); }}
-                          style={{ minHeight: 80, border: "2px dashed #334155", borderRadius: 9, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#475569", fontSize: 13 }}>
-                          <div>＋</div>
-                          <div style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>タップして登録</div>
+                    return (
+                      <div key={part.id} style={{ display: "flex", alignItems: "flex-start", position: "relative", zIndex: 1 }}>
+                        {/* 中分類+部品ラベル */}
+                        <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid " + (sc ? cat.color + "44" : "#1e293b"), borderRadius: 8, padding: "8px 10px", boxSizing: "border-box" }}>
+                          {sc && <div style={{ fontSize: 9, color: cat ? cat.color : "#64748b", fontWeight: 700, marginBottom: 2 }}>{sc.name}</div>}
+                          <input value={part.name}
+                            onChange={function(e) {
+                              var next = parts.map(function(p) { return p.id === part.id ? Object.assign({}, p, { name: e.target.value }) : p; });
+                              setParts(next);
+                            }}
+                            style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #334155", color: "#f1f5f9", fontSize: 11, fontWeight: 800, outline: "none", marginBottom: 4, padding: "1px 0", boxSizing: "border-box" }}
+                          />
+                          <div style={{ display: "flex", gap: 3, marginBottom: 4 }}>
+                            <button onClick={function() {
+                                var idx2 = parts.indexOf(part);
+                                if (idx2 <= 0) return;
+                                var next = parts.slice(); var tmp = next[idx2]; next[idx2] = next[idx2-1]; next[idx2-1] = tmp; setParts(next);
+                              }}
+                              style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 3, color: "#64748b", fontSize: 10, padding: "1px 0", cursor: "pointer" }}>↑</button>
+                            <button onClick={function() {
+                                var idx2 = parts.indexOf(part);
+                                if (idx2 >= parts.length-1) return;
+                                var next = parts.slice(); var tmp = next[idx2]; next[idx2] = next[idx2+1]; next[idx2+1] = tmp; setParts(next);
+                              }}
+                              style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 3, color: "#64748b", fontSize: 10, padding: "1px 0", cursor: "pointer" }}>↓</button>
+                            <button onClick={function() { showConfirm("「" + part.name + "」を削除しますか？", function(){ removePart(part.id); }); }}
+                              style={{ width: 22, background: "#1e293b", border: "1px solid #ef444433", borderRadius: 3, color: "#ef4444", fontSize: 10, padding: "1px 0", cursor: "pointer" }}>×</button>
+                          </div>
+                          <div style={{ fontSize: 9, color: "#475569", marginBottom: 2 }}>目標コスト</div>
+                          <input type="number" value={targetCost}
+                            onChange={function(e) { setTargetCostMap(function(prev) { var n = Object.assign({}, prev); n[part.id] = e.target.value; return n; }); }}
+                            placeholder="—"
+                            style={{ width: "100%", background: "#1e293b", border: "1px solid " + (overBudget ? "#ef4444" : "#334155"), borderRadius: 4, color: "#e2e8f0", padding: "2px 5px", fontSize: 10, outline: "none", boxSizing: "border-box" }}
+                          />
+                          {adoptedCost > 0 && (
+                            <div style={{ marginTop: 3, fontSize: 9, fontWeight: 700, color: overBudget ? "#ef4444" : "#22c55e" }}>
+                              採用計 ¥{adoptedCost.toLocaleString()}
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <div>
-                          {suppliers.map(function(s, si) {
-                            var isSel = s.id === selected;
+
+                        {/* 工程カラム */}
+                        <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
+                          {processes.map(function(proc, ci) {
+                            var cell = getCell(part.id, ci);
+                            var suppliers = cell && cell.suppliers ? cell.suppliers : [];
+                            var selected = cell ? cell.selected : null;
                             var candidates = cell && cell.candidates ? cell.candidates : [];
-                            var isCandidate = candidates.indexOf(s.id) >= 0;
-                            var status = isSel ? "adopted" : isCandidate ? "candidate" : "none";
-                            var score = scores[si];
-                            // 採用以外の中でスコア最高 → 検討
-                            var nonSelScores = suppliers.filter(function(sx) { return sx.id !== selected; }).map(function(sx) { return scoreSupplier(sx, suppliers); });
-                            var maxNonSelScore = Math.max.apply(null, nonSelScores.concat([0]));
-                            var isWin = !isSel && suppliers.length > 1 && score === maxNonSelScore && score > 0;
-                            var sc = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
-
-                            // data属性でDOMを識別（refの代わり）
-                            // data-node: "partId_ci_adopted" / "partId_ci_win" / "partId_ci_cand"
-                            // data-part / data-ci: 全カード共通（先頭カードのフォールバック用）
-                            var dataNode = isSel ? (part.id + "_" + ci + "_adopted")
-                                         : isWin  ? (part.id + "_" + ci + "_win")
-                                         : isCandidate ? (part.id + "_" + ci + "_cand")
-                                         : null;
-
-                            // 背景・枠色
-                            var bg = isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)"
-                                   : isCandidate ? "#0f1a2e"
-                                   : "#0a1220";
-                            var borderColor = isSel ? "#0ea5e9"
-                                           : isCandidate ? "#334155"
-                                           : "#1e293b";
-                            var borderW = isSel ? 2 : 1;
-                            var nameColor = isSel ? "#f1f5f9" : isCandidate ? "#cbd5e1" : "#475569";
+                            var scores = suppliers.map(function(s) { return scoreSupplier(s, suppliers); });
+                            var maxScore = Math.max.apply(null, scores.concat([0]));
+                            var winnerId = maxScore > 0 ? (suppliers[scores.indexOf(maxScore)] || {}).id : null;
 
                             return (
-                              <div key={s.id}
-                                data-part={part.id} data-ci={ci}
-                                {...(dataNode ? { "data-node": dataNode } : {})}
-                                onClick={function() {
-                                  var newCandidates = candidates.slice();
-                                  var newSelected = selected;
-                                  if (status === "none") {
-                                    // なし → 候補
-                                    newCandidates.push(s.id);
-                                    newSelected = selected; // 採用は変えない
-                                  } else if (status === "candidate") {
-                                    // 候補 → 採用（他の採用を解除）
-                                    newSelected = s.id;
-                                  } else {
-                                    // 採用 → なし（候補からも外す）
-                                    newSelected = null;
-                                    newCandidates = newCandidates.filter(function(id) { return id !== s.id; });
-                                  }
-                                  setCell(part.id, ci, Object.assign({}, cell, { selected: newSelected, candidates: newCandidates }));
-                                }}
-                                style={{ marginBottom: 4, minHeight: 64, background: bg, border: borderW + "px solid " + borderColor, borderRadius: 9, padding: "8px 10px", cursor: "pointer", position: "relative", userSelect: "none", opacity: status === "none" ? 0.5 : 1 }}>
-                                {/* 状態バッジ */}
-                                {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
-                                {isCandidate && !isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#334155", color: "#94a3b8", fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>候補</div>}
-                                {isWin && !isSel && <div style={{ position: "absolute", top: -8, right: 6, background: "#475569", color: "#e2e8f0", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>検討</div>}
-                                {/* 状態インジケーター */}
-                                <div style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: "50%", background: isSel ? "#0ea5e9" : isCandidate ? "#64748b" : "#1e293b" }}/>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: nameColor, paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>{s.name || ("S" + (si+1))}</div>
-                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                  {s.cost && <span style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(s.cost).toLocaleString()}</span>}
-                                  {s.leadTime && <span style={{ fontSize: 10, color: "#64748b" }}>LT:{s.leadTime}日</span>}
-                                </div>
-                                <div style={{ marginTop: 5, height: 3, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
-                                  <div style={{ width: score + "%", height: "100%", background: sc, borderRadius: 2 }}/>
-                                </div>
-                                {/* タップヒント */}
-                                <div style={{ position: "absolute", bottom: 4, right: 6, fontSize: 8, color: "#334155" }}>
-                                  {status === "none" ? "tap→候補" : status === "candidate" ? "tap→採用" : "tap→解除"}
+                              <div key={ci} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+                                {ci > 0 && <div style={{ width: FNODE_GAP, flexShrink: 0 }}/>}
+                                <div style={{ width: FNODE_W, position: "relative" }}
+                                  ref={function(el) {
+                                    if (el) { nodeRefs.current[part.id + "_" + ci] = el; }
+                                    if (el && selected) { nodeRefs.current[part.id + "_" + ci + "_adopted"] = el; }
+                                  }}>
+                                  {suppliers.length === 0 ? (
+                                    <div onClick={function(){ onOpenModal(part.id, part.name, ci); }}
+                                      style={{ minHeight: 80, border: "2px dashed #334155", borderRadius: 9, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#475569", fontSize: 13 }}>
+                                      <div>＋</div>
+                                      <div style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>タップして登録</div>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      {suppliers.map(function(s, si) {
+                                        var isSel = s.id === selected;
+                                        var isCand = candidates.indexOf(s.id) >= 0;
+                                        var isWin = s.id === winnerId && !isSel;
+                                        var score = scores[si];
+                                        var sc2 = score >= 70 ? "#22c55e" : score >= 40 ? "#f59e0b" : "#ef4444";
+                                        var nodeKey = part.id + "_" + ci;
+                                        return (
+                                          <div key={s.id}
+                                            ref={function(el) {
+                                              if (!el) return;
+                                              if (isSel) nodeRefs.current[nodeKey] = el;
+                                              if (isSel) nodeRefs.current[nodeKey + "_adopted"] = el;
+                                              if (isWin) nodeRefs.current[nodeKey + "_w"] = el;
+                                              if (isCand && !isSel) nodeRefs.current[nodeKey + "_cand"] = el;
+                                            }}
+                                            onClick={function() {
+                                              var newCands = candidates.slice();
+                                              var newSel = selected;
+                                              if (isSel) { newSel = null; newCands = newCands.filter(function(id){ return id !== s.id; }); }
+                                              else if (isCand) { newSel = s.id; }
+                                              else { newCands.push(s.id); }
+                                              setCell(part.id, ci, Object.assign({}, cell, { selected: newSel, candidates: newCands }));
+                                            }}
+                                            style={{ marginBottom: 4, minHeight: 64, background: isSel ? "linear-gradient(135deg,#0c2040,#0a2a1a)" : isWin ? "#0f1a2e" : "#0a1220", border: (isSel?2:1) + "px solid " + (isSel ? "#0ea5e9" : isWin ? "#f59e0b" : isCand ? "#334155" : "#1e293b"), borderRadius: 9, padding: "8px 10px", cursor: "pointer", position: "relative", userSelect: "none", opacity: (!isSel && !isCand && !isWin) ? 0.5 : 1 }}>
+                                            {isSel && <div style={{ position: "absolute", top: -8, left: 6, background: "#0ea5e9", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>✓採用</div>}
+                                            {isWin && <div style={{ position: "absolute", top: -8, left: 6, background: "#f59e0b", color: "#000", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 20 }}>検討</div>}
+                                            {isCand && !isSel && !isWin && <div style={{ position: "absolute", top: -8, left: 6, background: "#334155", color: "#94a3b8", fontSize: 8, padding: "1px 6px", borderRadius: 20 }}>候補</div>}
+                                            <div style={{ position: "absolute", top: 5, right: 5, width: 6, height: 6, borderRadius: "50%", background: sc2 }}/>
+                                            <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? "#f1f5f9" : "#94a3b8", paddingRight: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 2 }}>{s.name || ("S"+(si+1))}</div>
+                                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                              {s.cost && <span style={{ fontSize: 10, color: "#0ea5e9" }}>¥{parseFloat(s.cost).toLocaleString()}</span>}
+                                              {s.leadTime && <span style={{ fontSize: 10, color: "#64748b" }}>LT:{s.leadTime}日</span>}
+                                            </div>
+                                            <div style={{ marginTop: 4, height: 3, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+                                              <div style={{ width: score + "%", height: "100%", background: sc2, borderRadius: 2 }}/>
+                                            </div>
+                                            <div style={{ position: "absolute", bottom: 3, right: 5, fontSize: 8, color: "#334155" }}>
+                                              {isSel ? "tap→解除" : isCand ? "tap→採用" : "tap→候補"}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
+                                        <div onClick={function(){ onOpenModal(part.id, part.name, ci); }}
+                                          style={{ flex: 1, border: "1px dashed #334155", borderRadius: 6, padding: "3px 0", textAlign: "center", cursor: "pointer", color: "#475569", fontSize: 10 }}>
+                                          ＋ 候補
+                                        </div>
+                                        <div onClick={function(){ setLinkDialog({ fromPartId: part.id, fromProcIdx: ci, fromLabel: part.name + " / " + proc }); }}
+                                          style={{ width: 26, border: "1px dashed #6366f155", borderRadius: 6, padding: "3px 0", textAlign: "center", cursor: "pointer", color: "#6366f1", fontSize: 12 }}>
+                                          🔗
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             );
                           })}
-                          <div style={{ display: "flex", gap: 4, marginTop: 2 }}>
-                            <div onClick={function() { onOpenModal(part.id, part.name, ci); }}
-                              style={{ flex: 1, border: "1px dashed #334155", borderRadius: 7, padding: "3px 0", textAlign: "center", cursor: "pointer", color: "#475569", fontSize: 10 }}>
-                              ＋ 候補
-                            </div>
-                            <div onClick={function() { setLinkDialog({ fromPartId: part.id, fromProcIdx: ci, fromLabel: part.name + " / " + proc }); }}
-                              title="部品間合流線を引く"
-                              style={{ width: 28, border: "1px dashed #6366f155", borderRadius: 7, padding: "3px 0", textAlign: "center", cursor: "pointer", color: "#6366f1", fontSize: 12 }}>
-                              🔗
-                            </div>
-                          </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
-        );
+          );
       })}
-
-      {/* 凡例 */}
-      <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 10, color: "#475569", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#22c55e" }}/><div style={{ width: 0, height: 0, borderLeft: "7px solid #22c55e", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}/>採用（緑実線）</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 0, borderTop: "2px dashed #475569" }}/>検討（グレー点線）</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 0, borderTop: "2px dashed #f59e0b" }}/>候補（黄色点線）</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 20, height: 2, background: "#6366f1" }}/>部品間合流（🔗で追加、×で削除）</div>
-        <div style={{ color: "#334155" }}>tap: なし→候補→採用→なし</div>
-      </div>
     </div>
   );
 }
 
-// ─── テーマデータ構造ヘルパー ─────────────────────────────────────────
+// --- テーマデータ構造ヘルパー -----------------------------------------
 const THEMES_KEY = "shoury_themes_v1";
 const ACTIVE_KEY = "shoury_active_v1";
 
-function makeBlankThemeData(name = "新規開発テーマ") {
-  const tid = newId();
+function makeBlankThemeData(name) {
+  var themeName = name || "New Theme";
+  var tid = newId();
   return {
-    theme: { id: tid, name },
+    theme: { id: tid, name: themeName },
     categories: [],
     parts: [],
     processes: [
@@ -1347,7 +1371,7 @@ function loadActiveId(themes) {
   return themes[0]?.theme.id ?? null;
 }
 
-// ─── メインアプリ ─────────────────────────────────────────────────────
+// --- メインアプリ -----------------------------------------------------
 function App() {
   const [themes, setThemesRaw] = useState(() => loadThemes());
   const [activeThemeId, setActiveThemeIdRaw] = useState(() => loadActiveId(loadThemes()));
@@ -1357,6 +1381,7 @@ function App() {
   const [filterCatId, setFilterCatId] = useState(null);
   const [newPartName, setNewPartName] = useState("");
   const [newPartCatId, setNewPartCatId] = useState("");
+  const [newPartSubCatId, setNewPartSubCatId] = useState("");
   const [newProcName, setNewProcName] = useState("");
   const [archive, setArchive] = useState(() => loadArchive());
   const [importError, setImportError] = useState("");
@@ -1366,10 +1391,11 @@ function App() {
 
   const showConfirm = (message, onOk) => setConfirmModal({ message, onOk });
 
-  // ── アクティブテーマデータの読み書き ──
+  // -- アクティブテーマデータの読み書き --
   const activeData = themes.find(t => t.theme.id === activeThemeId) || themes[0] || makeBlankThemeData();
   const theme = activeData.theme;
   const categories = activeData.categories || [];
+  const subCategories = activeData.subCategories || [];
   const parts = activeData.parts || [];
   const processes = activeData.processes || SAMPLE_PROCESSES;
   const matrix = activeData.matrix || {};
@@ -1385,6 +1411,7 @@ function App() {
   const setTheme = (val) => updateActiveData({ theme: val });
   const setCategories = (val) => updateActiveData({ categories: val });
   const setParts = (val) => updateActiveData({ parts: val });
+  const setSubCategories = (val) => updateActiveData({ subCategories: val });
   const setProcesses = (val) => updateActiveData({ processes: val });
 
   const setActiveThemeId = (id) => {
@@ -1395,7 +1422,7 @@ function App() {
     setView("matrix");
   };
 
-  // ── テーマ追加・削除 ──
+  // -- テーマ追加・削除 --
   const addTheme = () => {
     const blank = makeBlankThemeData();
     const next = [...themes, blank];
@@ -1595,8 +1622,8 @@ function App() {
     const name = newPartName.trim();
     const catId = resolvedPartCatId;
     if (!name || !catId) return;
-    setParts([...parts, { id: newId(), categoryId: catId, name }]);
-    setNewPartName("");
+    setParts([...parts, { id: newId(), categoryId: catId, subCategoryId: newPartSubCatId || null, name }]);
+    setNewPartName(""); setNewPartSubCatId("");
     // 追加後も選択中の大分類を維持（stateを確定値にセット）
     setNewPartCatId(catId);
   };
@@ -1626,7 +1653,7 @@ function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#020817", color: "#e2e8f0", fontFamily: "'Inter','Noto Sans JP',sans-serif" }}>
-      {/* ── ヘッダー ── */}
+      {/* -- ヘッダー -- */}
       <div style={{ borderBottom: "1px solid #1e293b", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "rgba(2,8,23,0.97)", backdropFilter: "blur(8px)", zIndex: 100, gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <div style={{ width: 24, height: 24, background: "linear-gradient(135deg,#6366f1,#0ea5e9)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}>⛓</div>
@@ -1707,7 +1734,7 @@ function App() {
 
       <div style={{ padding: "24px 22px 48px" }}>
 
-        {/* ── テーマ一覧 ── */}
+        {/* -- テーマ一覧 -- */}
         {view === "themes" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -1781,12 +1808,12 @@ function App() {
           </div>
         )}
 
-        {/* ── テーマ設定 ── */}
+        {/* -- テーマ設定 -- */}
         {view === "theme" && (
-          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} showConfirm={showConfirm} />
+          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} subCategories={subCategories} setSubCategories={setSubCategories} parts={parts} setParts={setParts} showConfirm={showConfirm} />
         )}
 
-        {/* ── マトリクス ── */}
+        {/* -- マトリクス -- */}
         {view === "matrix" && (
           <div>
             {/* ツールバー */}
@@ -1891,17 +1918,24 @@ function App() {
           </div>
         )}
 
-        {/* ── フロービュー（マトリクス統合） ── */}
+        {/* -- フロービュー（マトリクス統合） -- */}
         {view === "flow" && (
           <div>
-            {/* ── ツールバー：部品・工程追加 ── */}
+            {/* -- ツールバー：部品・工程追加 -- */}
             <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <select value={resolvedPartCatId} onChange={e => setNewPartCatId(e.target.value)}
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPart()} placeholder="部品名"
+                {subCategories.filter(sc => sc.categoryId === resolvedPartCatId).length > 0 && (
+                  <select value={newPartSubCatId} onChange={e => setNewPartSubCatId(e.target.value)}
+                    style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
+                    <option value="">中分類なし</option>
+                    {subCategories.filter(sc => sc.categoryId === resolvedPartCatId).map(sc => <option key={sc.id} value={sc.id}>{sc.name}</option>)}
+                  </select>
+                )}
+                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => { if(e.key==="Enter"){e.preventDefault();addPart();}}} placeholder="部品名"
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 100 }} />
                 <button onClick={addPart} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 部品</button>
               </div>
@@ -1913,7 +1947,7 @@ function App() {
               </div>
             </div>
 
-            {/* ── 大分類タブ ── */}
+            {/* -- 大分類タブ -- */}
             <div style={{ borderBottom: "2px solid #1e293b", marginBottom: 16 }}>
               <div style={{ display: "flex", gap: 0, overflowX: "auto" }}>
                 {/* すべてタブ */}
@@ -1935,29 +1969,34 @@ function App() {
                   );
                 })}
               </div>
-              {/* 選択中の大分類内の部品タブ（2段目） */}
-              {flowPartId && flowPartId !== "__all__" && (() => {
-                const activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
-                  : parts.find(p => p.id === flowPartId)?.categoryId;
-                const activeCat = categories.find(c => c.id === activeCatId);
-                const catParts = parts.filter(p => p.categoryId === activeCatId);
+              {/* 選択中の大分類内の中分類・部品タブ（2段目） */}
+              {(function() {
+                if (!flowPartId || flowPartId === "__all__") return null;
+                var activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
+                  : (parts.find(function(p){ return p.id === flowPartId; }) || {}).categoryId;
+                var activeCat = categories.find(function(c){ return c.id === activeCatId; });
+                var catParts = parts.filter(function(p){ return p.categoryId === activeCatId; });
                 if (!catParts.length || !activeCat) return null;
                 return (
                   <div style={{ display: "flex", gap: 0, paddingLeft: 8, overflowX: "auto", borderTop: "1px solid #1e293b" }}>
-                    {catParts.map(part => (
-                      <button key={part.id} onClick={() => setFlowPartId(part.id)}
-                        style={{ background: "none", border: "none", borderBottom: `2px solid ${flowPartId === part.id ? activeCat.color : "transparent"}`, color: flowPartId === part.id ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: flowPartId === part.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
-                        {part.name}
-                      </button>
-                    ))}
-                    <button onClick={() => { setNewPartCatId(activeCatId); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }}
+                    {catParts.map(function(part) {
+                      var sc = subCategories.find(function(s){ return s.id === part.subCategoryId; });
+                      var isActive = flowPartId === part.id;
+                      return (
+                        <button key={part.id} onClick={function(){ setFlowPartId(part.id); }}
+                          style={{ background: "none", border: "none", borderBottom: "2px solid " + (isActive ? activeCat.color : "transparent"), color: isActive ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: isActive ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
+                          {sc ? <span style={{ fontSize: 9, color: "#64748b", marginRight: 3 }}>{sc.name}/</span> : null}{part.name}
+                        </button>
+                      );
+                    })}
+                    <button onClick={function(){ setNewPartCatId(activeCatId); setNewPartName(""); var el = document.getElementById("new-part-input"); if(el) el.focus(); }}
                       style={{ background: "none", border: "none", color: "#334155", padding: "5px 8px", fontSize: 14, cursor: "pointer" }}>＋</button>
                   </div>
                 );
               })()}
             </div>
 
-            {/* ── 工程管理バー（フロー図直上） ── */}
+            {/* -- 工程管理バー（フロー図直上） -- */}
             <div style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 14px", marginBottom: 10, overflowX: "auto" }}>
               <div style={{ fontSize: 10, color: "#475569", marginBottom: 7 }}>工程の順番・削除</div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
@@ -1997,20 +2036,20 @@ function App() {
               </div>
             </div>
 
-            {/* ── フロー図本体 ── */}
-            {(() => {
+            {/* -- フロー図本体 -- */}
+            {(function() {
               var flowPartIds;
               if (!flowPartId || flowPartId === "__all__") {
                 flowPartIds = "__all__";
               } else if (flowPartId.indexOf("cat:") === 0) {
-                var catId = flowPartId.slice(4);
-                flowPartIds = parts.filter(function(p) { return p.categoryId === catId; }).map(function(p) { return p.id; });
+                var catId2 = flowPartId.slice(4);
+                flowPartIds = parts.filter(function(p) { return p.categoryId === catId2; }).map(function(p) { return p.id; });
               } else {
                 flowPartIds = [flowPartId];
               }
               return (
                 <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                  <FlowView partIds={flowPartIds} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
+                  <FlowView partIds={flowPartIds} parts={parts} categories={categories} subCategories={subCategories} processes={processes.map(function(p){ return p.name; })} getCell={function(pid, ci){ return getCell(pid, ci); }} setCell={function(pid, ci, data){ return setCell(pid, ci, data); }} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={function(partId, partName, ci){ return setModal({ partId: partId, partName: partName, processIdx: ci }); }}
                   themeId={activeThemeId}
                   setParts={setParts}
                   removePart={removePart}
@@ -2020,7 +2059,7 @@ function App() {
               );
             })()}
 
-            {/* ── 凡例 ── */}
+            {/* -- 凡例 -- */}
             <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 10, color: "#475569" }}>
               {[{ color: "#22c55e", label: "採用確定" }, { color: "#f59e0b", label: "検討中" }, { color: "#1e293b", label: "未着手" }].map(l => (
                 <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -2031,7 +2070,7 @@ function App() {
           </div>
         )}
 
-        {/* ── サマリー ── */}
+        {/* -- サマリー -- */}
         {view === "summary" && (
           <div>
             <h2 style={{ color: "#f1f5f9", fontSize: 18, marginBottom: 4, fontWeight: 800 }}>{theme.name}</h2>
@@ -2115,7 +2154,7 @@ function App() {
           </div>
         )}
 
-        {/* ── アーカイブ ── */}
+        {/* -- アーカイブ -- */}
         {view === "archive" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
