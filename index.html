@@ -1007,6 +1007,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   var [linkDialog, setLinkDialog] = useState(null);
   var containerRef = useRef(null);
   var nodeRefs = useRef({});
+  var scrollRef = useRef(null);
   var [svgLines, setSvgLines] = useState([]);
   var [arrowLines, setArrowLines] = useState([]);
   var [winLines, setWinLines] = useState([]);
@@ -1040,9 +1041,10 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
 
     var eRect = sel.getBoundingClientRect();
     var cRect = cont.getBoundingClientRect();
-    var sl = cont.scrollLeft || 0;
+    var sl = (scrollRef.current ? scrollRef.current.scrollLeft : 0);
+    var st = (scrollRef.current ? scrollRef.current.scrollTop : 0);
     return { left: eRect.left - cRect.left + sl, right: eRect.right - cRect.left + sl,
-             top: eRect.top - cRect.top, bottom: eRect.bottom - cRect.top,
+             top: eRect.top - cRect.top + st, bottom: eRect.bottom - cRect.top + st,
              width: eRect.width, height: eRect.height };
   }
 
@@ -1139,11 +1141,14 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
     window.addEventListener('scroll', recalcLines, true);
     window.addEventListener('resize', recalcLines);
     var contEl = containerRef.current;
+    var scrollEl = scrollRef.current;
     if (contEl) contEl.addEventListener('scroll', recalcLines);
+    if (scrollEl) scrollEl.addEventListener('scroll', recalcLines);
     return function() {
       window.removeEventListener('scroll', recalcLines, true);
       window.removeEventListener('resize', recalcLines);
       if (contEl) contEl.removeEventListener('scroll', recalcLines);
+      if (scrollEl) scrollEl.removeEventListener('scroll', recalcLines);
     };
   }, [crossLinks, displayParts.length, processes.length]);
 
@@ -1155,7 +1160,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   );
 
   return (
-    <div ref={containerRef} style={{ overflowX: "auto", overflowY: "visible", position: "relative" }}>
+    <div ref={containerRef} style={{ position: "relative", overflow: "visible" }}>
       {/* 部品間合流線ダイアログ */}
       {linkDialog && (
         <div style={{ background: "#0f172a", border: "1px solid #6366f1", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
@@ -1256,6 +1261,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
         );
       })}
 
+      <div ref={function(el){scrollRef.current=el;}} style={{ overflowX: "auto", overflowY: "visible" }}>
       {/* 工程ヘッダー */}
       <div style={{ display: "flex", marginBottom: 8, marginLeft: 80 + 6 + FLABEL_W, position: "relative", zIndex: 1 }}>
         {processes.map(function(proc, ci) {
@@ -1456,6 +1462,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
             </div>
           );
       })}
+      </div>{/* end inner scroll */}
     </div>
   );
 }
