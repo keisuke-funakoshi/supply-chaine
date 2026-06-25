@@ -617,7 +617,7 @@ function ScoreBar({ value }) {
 }
 
 // ─── テーマ/大分類設定パネル ──────────────────────────────────────────
-function ThemePanel({ theme, setTheme, categories, setCategories, parts, setParts, showConfirm }) {
+function ThemePanel({ theme, setTheme, categories, setCategories, subCategories, setSubCategories, parts, setParts, showConfirm }) {
   const [newCatName, setNewCatName] = useState("");
   const drag = useDragSort(categories, setCategories);
 
@@ -690,6 +690,30 @@ function ThemePanel({ theme, setTheme, categories, setCategories, parts, setPart
                   onClick={() => showConfirm(`「${cat.name}」を削除しますか？（この大分類に属する部品もすべて削除されます）`, () => removeCategory(cat.id))}
                   style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 2 }}
                 >×</button>
+              </div>
+              {/* 中分類リスト */}
+              <div style={{ marginTop: 8, paddingLeft: 10, borderLeft: "2px solid " + cat.color + "33" }}>
+                <div style={{ fontSize: 10, color: "#64748b", marginBottom: 5 }}>中分類</div>
+                {subCategories.filter(sc => sc.categoryId === cat.id).map(sc => (
+                  <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
+                    <input value={sc.name}
+                      onChange={e => setSubCategories(subCategories.map(s => s.id === sc.id ? { ...s, name: e.target.value } : s))}
+                      style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }} />
+                    <button onClick={() => showConfirm("「" + sc.name + "」を削除しますか？", () => {
+                        setSubCategories(subCategories.filter(s => s.id !== sc.id));
+                        setParts(parts.map(p => p.subCategoryId === sc.id ? { ...p, subCategoryId: null } : p));
+                      })}
+                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
+                  </div>
+                ))}
+                <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+                  <input id={"new-subcat-" + cat.id} placeholder="中分類名を入力"
+                    style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); var v = e.target.value.trim(); if (v) { setSubCategories([...subCategories, { id: newId(), categoryId: cat.id, name: v }]); e.target.value = ""; } }}} />
+                  <button onClick={() => { var inp = document.getElementById("new-subcat-" + cat.id); if (inp && inp.value.trim()) { setSubCategories([...subCategories, { id: newId(), categoryId: cat.id, name: inp.value.trim() }]); inp.value = ""; }}}
+                    style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", padding: "3px 10px", fontSize: 11, cursor: "pointer" }}>＋</button>
+                </div>
               </div>
             );
           })}
@@ -855,7 +879,7 @@ function saveCrossLinks(data) { localStorage.setItem(CROSS_LINKS_KEY, JSON.strin
 
 const FNODE_W = 180, FNODE_GAP = 40, FLABEL_W = 148;
 
-function FlowView({ partIds, parts, setParts, removePart, categories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId, showConfirm }) {
+function FlowView({ partIds, parts, setParts, removePart, categories, subCategories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId, showConfirm }) {
   var displayParts = partIds === "__all__" ? parts : parts.filter(function(p) { return partIds.indexOf(p.id) >= 0; });
   var [crossLinks, setCrossLinksRaw] = useState(function() {
     var all = loadCrossLinks(); return all[themeId] || [];
@@ -1136,7 +1160,8 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
           <div key={part.id} style={{ display: "flex", marginBottom: 10, alignItems: "flex-start", position: "relative", zIndex: 1 }}>
             {/* 部品ラベル */}
             <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid " + (cat ? cat.color + "44" : "#1e293b"), borderRadius: 10, padding: "10px 10px", boxSizing: "border-box" }}>
-              {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 3 }}>{cat.name}</div>}
+              {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 1 }}>{cat.name}</div>}
+              {(function(){ var sc = subCategories.find(function(s){ return s.id === part.subCategoryId; }); return sc ? <div style={{ fontSize: 9, color: "#64748b", marginBottom: 3 }}>{sc.name}</div> : null; })()}
               {/* 部品名（インライン編集） */}
               <input value={part.name}
                 onChange={function(e) {
@@ -1357,6 +1382,7 @@ function App() {
   const [filterCatId, setFilterCatId] = useState(null);
   const [newPartName, setNewPartName] = useState("");
   const [newPartCatId, setNewPartCatId] = useState("");
+  const [newPartSubCatId, setNewPartSubCatId] = useState("");
   const [newProcName, setNewProcName] = useState("");
   const [archive, setArchive] = useState(() => loadArchive());
   const [importError, setImportError] = useState("");
@@ -1370,6 +1396,7 @@ function App() {
   const activeData = themes.find(t => t.theme.id === activeThemeId) || themes[0] || makeBlankThemeData();
   const theme = activeData.theme;
   const categories = activeData.categories || [];
+  const subCategories = activeData.subCategories || [];
   const parts = activeData.parts || [];
   const processes = activeData.processes || SAMPLE_PROCESSES;
   const matrix = activeData.matrix || {};
@@ -1385,6 +1412,7 @@ function App() {
   const setTheme = (val) => updateActiveData({ theme: val });
   const setCategories = (val) => updateActiveData({ categories: val });
   const setParts = (val) => updateActiveData({ parts: val });
+  const setSubCategories = (val) => updateActiveData({ subCategories: val });
   const setProcesses = (val) => updateActiveData({ processes: val });
 
   const setActiveThemeId = (id) => {
@@ -1595,8 +1623,8 @@ function App() {
     const name = newPartName.trim();
     const catId = resolvedPartCatId;
     if (!name || !catId) return;
-    setParts([...parts, { id: newId(), categoryId: catId, name }]);
-    setNewPartName("");
+    setParts([...parts, { id: newId(), categoryId: catId, subCategoryId: subCatId, name }]);
+    setNewPartName(""); setNewPartSubCatId("");
     // 追加後も選択中の大分類を維持（stateを確定値にセット）
     setNewPartCatId(catId);
   };
@@ -1783,7 +1811,7 @@ function App() {
 
         {/* ── テーマ設定 ── */}
         {view === "theme" && (
-          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} parts={parts} setParts={setParts} showConfirm={showConfirm} />
+          <ThemePanel theme={theme} setTheme={setTheme} categories={categories} setCategories={setCategories} subCategories={subCategories} setSubCategories={setSubCategories} parts={parts} setParts={setParts} showConfirm={showConfirm} />
         )}
 
         {/* ── マトリクス ── */}
@@ -1901,7 +1929,14 @@ function App() {
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPart()} placeholder="部品名"
+                {subCategories.filter(sc => sc.categoryId === resolvedPartCatId).length > 0 && (
+                  <select value={newPartSubCatId} onChange={e => setNewPartSubCatId(e.target.value)}
+                    style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", padding: "5px 8px", fontSize: 12, outline: "none" }}>
+                    <option value="">中分類なし</option>
+                    {subCategories.filter(sc => sc.categoryId === resolvedPartCatId).map(sc => <option key={sc.id} value={sc.id}>{sc.name}</option>)}
+                  </select>
+                )}
+                <input id="new-part-input" value={newPartName} onChange={e => setNewPartName(e.target.value)} onKeyDown={e => { if(e.key==="Enter"){e.preventDefault();addPart();}}} placeholder="部品名"
                   style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", padding: "5px 10px", fontSize: 12, outline: "none", width: 100 }} />
                 <button onClick={addPart} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>＋ 部品</button>
               </div>
@@ -1935,7 +1970,7 @@ function App() {
                   );
                 })}
               </div>
-              {/* 選択中の大分類内の部品タブ（2段目） */}
+              {/* 選択中の大分類内の中分類・部品タブ（2段目） */}
               {flowPartId && flowPartId !== "__all__" && (() => {
                 const activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
                   : parts.find(p => p.id === flowPartId)?.categoryId;
@@ -1944,12 +1979,15 @@ function App() {
                 if (!catParts.length || !activeCat) return null;
                 return (
                   <div style={{ display: "flex", gap: 0, paddingLeft: 8, overflowX: "auto", borderTop: "1px solid #1e293b" }}>
-                    {catParts.map(part => (
+                    {catParts.map(part => {
+                      var sc = subCategories.find(function(s){ return s.id === part.subCategoryId; });
+                      return (
                       <button key={part.id} onClick={() => setFlowPartId(part.id)}
                         style={{ background: "none", border: "none", borderBottom: `2px solid ${flowPartId === part.id ? activeCat.color : "transparent"}`, color: flowPartId === part.id ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: flowPartId === part.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
-                        {part.name}
+                        {sc ? <span style={{ fontSize: 9, color: "#64748b", marginRight: 3 }}>{sc.name}/</span> : null}{part.name}
                       </button>
-                    ))}
+                      );
+                    })}
                     <button onClick={() => { setNewPartCatId(activeCatId); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }}
                       style={{ background: "none", border: "none", color: "#334155", padding: "5px 8px", fontSize: 14, cursor: "pointer" }}>＋</button>
                   </div>
@@ -2010,7 +2048,7 @@ function App() {
               }
               return (
                 <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                  <FlowView partIds={flowPartIds} parts={parts} categories={categories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
+                  <FlowView partIds={flowPartIds} parts={parts} categories={categories} subCategories={subCategories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
                   themeId={activeThemeId}
                   setParts={setParts}
                   removePart={removePart}
