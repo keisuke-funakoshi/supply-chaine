@@ -247,16 +247,26 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 // --- PDF出力（白背景・全部品/部品ごと） -----------------------------
 function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell, crossLinks) {
   var procNames = processes.map(function(p){return p.name;});
-  // サイズ定義
-  var CAT_W = 42;   // 大分類ボックス幅
-  var NW = 300;     // 工程セル幅
-  var NH = 150;     // サプライヤカード高さ
-  var NGAP = 9;     // カード間隔
-  var CGAP = 54;    // 工程間隔
-  var LW = 225;     // 部品ラベル幅
-  var HDRH = 57;    // 工程ヘッダー高さ
-  var PAD = 18;     // 余白
-  var ROW_GAP = 24; // 部品行間隔
+
+  // サイズ定義（大きめに設定）
+  var CAT_W = 36;   // 大分類ボックス幅
+  var NW = 280;     // 工程セル幅
+  var NH = 140;     // サプライヤカード高さ
+  var NGAP = 8;     // カード間隔
+  var CGAP = 48;    // 工程間隔
+  var LW = 200;     // 部品ラベル幅
+  var HDRH = 52;    // 工程ヘッダー高さ
+  var PAD = 16;     // 余白
+  var ROW_GAP = 20; // 部品行間隔
+  var LEFT = PAD + CAT_W + 10 + LW + 10; // コンテンツ開始X
+
+  // フォントサイズ
+  var FS_PROC = 18;   // 工程名
+  var FS_NAME = 20;   // サプライヤ名
+  var FS_INFO = 16;   // コスト・LT
+  var FS_BADGE = 12;  // バッジ
+  var FS_PART = 18;   // 部品名
+  var FS_CAT = 14;    // 大分類名（縦書き）
 
   // 大分類でグループ化
   var catMap = {};
@@ -267,7 +277,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
     catMap[cid].push(part);
   });
 
-  // 各部品の行高さ計算
+  // 各部品の行高さ
   function partRowH(part) {
     var maxRows = 1;
     procNames.forEach(function(proc, ci) {
@@ -275,78 +285,77 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
       var cnt = cell && cell.suppliers ? cell.suppliers.length : 0;
       if (cnt > maxRows) maxRows = cnt;
     });
-    return HDRH + maxRows * (NH + NGAP);
+    return maxRows * (NH + NGAP) - NGAP;
   }
 
-  // 全体の幅・高さ計算
-  var contentX = PAD + CAT_W + 8 + LW + 8;
-  var svgW = contentX + procNames.length * NW + (procNames.length - 1) * CGAP + PAD;
-  var totalH = PAD + 22; // タイトル分
+  // 全体幅・高さ
+  var svgW = LEFT + procNames.length * NW + (procNames.length - 1) * CGAP + PAD;
 
-  // 各大分類の高さを計算
+  // 高さは事前計算
+  var totalH = PAD + 28; // タイトル
   catOrder.forEach(function(catId) {
-    var parts = catMap[catId];
-    totalH += HDRH; // 工程ヘッダー行
-    parts.forEach(function(part) {
+    totalH += HDRH + 10; // 工程ヘッダー
+    catMap[catId].forEach(function(part) {
       totalH += partRowH(part) + ROW_GAP;
     });
-    totalH += 8; // 大分類間の余白
+    totalH += 12;
   });
 
   var out = [];
   out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + svgW + ' ' + totalH + '" preserveAspectRatio="xMinYMin meet" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
   out.push('<rect width="' + svgW + '" height="' + totalH + '" fill="#fff"/>');
   out.push('<defs>'+
-    '<marker id="ga" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#16a34a"/></marker>'+
-    '<marker id="gb" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/></marker>'+
-    '<marker id="gy" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#f59e0b"/></marker>'+
+    '<marker id="ga" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#16a34a"/></marker>'+
+    '<marker id="gb" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#6366f1"/></marker>'+
+    '<marker id="gy" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#f59e0b"/></marker>'+
     '</defs>');
 
   // タイトル
-  out.push('<text x="' + PAD + '" y="' + (PAD + 14) + '" font-size="21" font-weight="bold" fill="#1e293b">' + (themeName||'').replace(/&/g,'&amp;') + '</text>');
+  out.push('<text x="' + PAD + '" y="' + (PAD + 18) + '" font-size="20" font-weight="bold" fill="#1e293b">' + (themeName||'').replace(/&/g,'&amp;') + '</text>');
 
-  var curY = PAD + 22;
-  var partYMap = {}; // partId -> {ci -> {selY, winY, x}}
+  var curY = PAD + 28;
+  var partYMap = {};
 
   catOrder.forEach(function(catId) {
     var cat = categories.find(function(c){ return c.id === catId; });
     var catParts = catMap[catId];
     var catColor = (cat && cat.color) ? cat.color : '#334155';
-    var catName = (cat && cat.name) ? cat.name.replace(/&/g,'&amp;') : '';
+    var catName = cat ? (cat.name||'') : '';
 
     // 工程ヘッダー
     procNames.forEach(function(proc, ci) {
-      var hx = contentX + ci * (NW + CGAP);
-      out.push('<rect x="' + hx + '" y="' + curY + '" width="' + NW + '" height="' + HDRH + '" rx="6" fill="#1e293b"/>');
-      out.push('<text x="' + (hx + NW/2) + '" y="' + (curY + HDRH/2 + 5) + '" text-anchor="middle" font-size="20" font-weight="bold" fill="#fff">' + proc.replace(/&/g,'&amp;') + '</text>');
+      var hx = LEFT + ci * (NW + CGAP);
+      out.push('<rect x="' + hx + '" y="' + curY + '" width="' + NW + '" height="' + HDRH + '" rx="8" fill="#1e293b"/>');
+      out.push('<text x="' + (hx + NW/2) + '" y="' + (curY + HDRH/2 + FS_PROC*0.35) + '" text-anchor="middle" font-size="' + FS_PROC + '" font-weight="bold" fill="#fff">' + proc.replace(/&/g,'&amp;') + '</text>');
       if (ci < procNames.length - 1) {
-        out.push('<line x1="' + (hx + NW + 6) + '" y1="' + (curY + HDRH/2) + '" x2="' + (hx + NW + CGAP - 6) + '" y2="' + (curY + HDRH/2) + '" stroke="#64748b" stroke-width="1.5"/>');
+        var lx1 = hx + NW + 8, lx2 = hx + NW + CGAP - 8, ly = curY + HDRH/2;
+        out.push('<line x1="' + lx1 + '" y1="' + ly + '" x2="' + lx2 + '" y2="' + ly + '" stroke="#64748b" stroke-width="2"/>');
+        out.push('<polygon points="' + lx2 + ',' + (ly-4) + ' ' + (lx2+8) + ',' + ly + ' ' + lx2 + ',' + (ly+4) + '" fill="#64748b"/>');
       }
     });
-    curY += HDRH + 8;
+    curY += HDRH + 10;
 
-    // 大分類ボックスの高さ計算
-    var catBlockH = catParts.reduce(function(s,p){ return s + partRowH(p) + ROW_GAP; }, 0) - ROW_GAP;
+    // 大分類ブロック高さ
+    var catBlockH = catParts.reduce(function(s, p){ return s + partRowH(p) + ROW_GAP; }, 0) - ROW_GAP;
 
-    // 大分類ボックス
-    out.push('<rect x="' + PAD + '" y="' + curY + '" width="' + CAT_W + '" height="' + catBlockH + '" rx="5" fill="' + catColor + '22" stroke="' + catColor + '" stroke-width="2"/>');
-    // 縦書きテキスト（SVGのwriting-modeは非対応のためcharごとに改行）
-    var midY = curY + catBlockH / 2;
+    // 大分類ボックス（縦書き文字）
+    out.push('<rect x="' + PAD + '" y="' + curY + '" width="' + CAT_W + '" height="' + catBlockH + '" rx="6" fill="' + catColor + '22" stroke="' + catColor + '" stroke-width="2.5"/>');
     var chars = catName.split('');
-    var charH = 15;
+    var charH = FS_CAT + 4;
+    var startY = curY + catBlockH/2 - (chars.length * charH)/2 + FS_CAT;
     chars.forEach(function(ch, ci2) {
-      var cy = midY - (chars.length * charH / 2) + ci2 * charH + 12;
-      out.push('<text x="' + (PAD + CAT_W/2) + '" y="' + cy + '" text-anchor="middle" font-size="18" font-weight="bold" fill="' + catColor + '">' + ch + '</text>');
+      out.push('<text x="' + (PAD + CAT_W/2) + '" y="' + (startY + ci2*charH) + '" text-anchor="middle" font-size="' + FS_CAT + '" font-weight="bold" fill="' + catColor + '">' + ch.replace(/&/g,'&amp;') + '</text>');
     });
 
     catParts.forEach(function(part) {
-      var rowH = partRowH(part);
+      var rh = partRowH(part);
       partYMap[part.id] = {};
 
-      // 部品ラベル
-      var labelX = PAD + CAT_W + 8;
-      out.push('<rect x="' + labelX + '" y="' + curY + '" width="' + LW + '" height="' + rowH + '" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>');
-      out.push('<text x="' + (labelX + LW/2) + '" y="' + (curY + rowH/2 + 5) + '" text-anchor="middle" font-size="20" font-weight="bold" fill="#334155">' + (part.name||'').replace(/&/g,'&amp;') + '</text>');
+      // 部品ラベル（ページ跨ぎ防止: break-inside:avoid相当→SVGなので全体を1ブロックで描画）
+      var labelX = PAD + CAT_W + 10;
+      out.push('<rect x="' + labelX + '" y="' + curY + '" width="' + LW + '" height="' + rh + '" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>');
+      // 部品名（縦中央）
+      out.push('<text x="' + (labelX + LW/2) + '" y="' + (curY + rh/2 + FS_PART*0.35) + '" text-anchor="middle" font-size="' + FS_PART + '" font-weight="bold" fill="#334155">' + (part.name||'').replace(/&/g,'&amp;') + '</text>');
 
       // 各工程
       procNames.forEach(function(proc, ci) {
@@ -356,9 +365,8 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
         var candidates = cell && cell.candidates ? cell.candidates : [];
         var scores = suppliers.map(function(s){ return scoreSupplier(s, suppliers); });
         var maxScore = scores.length ? Math.max.apply(null, scores) : 0;
-        var winnerId = maxScore > 0 ? (suppliers[scores.indexOf(maxScore)] || {}).id : null;
-
-        var cx = contentX + ci * (NW + CGAP);
+        var winnerId = maxScore > 0 ? (suppliers[scores.indexOf(maxScore)]||{}).id : null;
+        var cx = LEFT + ci * (NW + CGAP);
         var selY = null, winY = null;
 
         suppliers.forEach(function(s, si) {
@@ -366,67 +374,72 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
           var isSel = s.id === selected;
           var isCand = candidates.indexOf(s.id) >= 0;
           var isWin = s.id === winnerId && !isSel;
-          var bg = isSel ? '#eff6ff' : isCand ? '#f0f9ff' : '#f8fafc';
+          var bg = isSel ? '#dbeafe' : isCand ? '#e0f2fe' : '#f8fafc';
           var strokeC = isSel ? '#2563eb' : isCand ? '#93c5fd' : '#e2e8f0';
-          var strokeW = isSel ? 2.5 : 1;
+          var strokeW = isSel ? 3 : 1.5;
 
-          out.push('<rect x="' + cx + '" y="' + ny + '" width="' + NW + '" height="' + NH + '" rx="8" fill="' + bg + '" stroke="' + strokeC + '" stroke-width="' + strokeW + '"/>');
+          out.push('<rect x="' + cx + '" y="' + ny + '" width="' + NW + '" height="' + NH + '" rx="10" fill="' + bg + '" stroke="' + strokeC + '" stroke-width="' + strokeW + '"/>');
 
           // バッジ
           if (isSel) {
-            out.push('<rect x="' + (cx+4) + '" y="' + (ny-8) + '" width="36" height="14" rx="7" fill="#2563eb"/>');
-            out.push('<text x="' + (cx+22) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">&#x2713;採用</text>');
+            out.push('<rect x="' + (cx+6) + '" y="' + (ny-10) + '" width="52" height="18" rx="9" fill="#2563eb"/>');
+            out.push('<text x="' + (cx+32) + '" y="' + (ny+3) + '" text-anchor="middle" font-size="' + FS_BADGE + '" font-weight="bold" fill="#fff">&#x2713; 採用</text>');
             selY = ny + NH/2;
           } else if (isWin) {
-            out.push('<rect x="' + (cx+4) + '" y="' + (ny-8) + '" width="28" height="14" rx="7" fill="#f59e0b"/>');
-            out.push('<text x="' + (cx+18) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="14" fill="#fff">検討</text>');
+            out.push('<rect x="' + (cx+6) + '" y="' + (ny-10) + '" width="40" height="18" rx="9" fill="#f59e0b"/>');
+            out.push('<text x="' + (cx+26) + '" y="' + (ny+3) + '" text-anchor="middle" font-size="' + FS_BADGE + '" fill="#fff">検討</text>');
             winY = ny + NH/2;
           } else if (isCand) {
-            out.push('<rect x="' + (cx+4) + '" y="' + (ny-8) + '" width="28" height="14" rx="7" fill="#334155"/>');
-            out.push('<text x="' + (cx+18) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="14" fill="#94a3b8">候補</text>');
+            out.push('<rect x="' + (cx+6) + '" y="' + (ny-10) + '" width="40" height="18" rx="9" fill="#475569"/>');
+            out.push('<text x="' + (cx+26) + '" y="' + (ny+3) + '" text-anchor="middle" font-size="' + FS_BADGE + '" fill="#cbd5e1">候補</text>');
           }
 
-          var name = (s.name || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-          out.push('<text x="' + (cx+10) + '" y="' + (ny+24) + '" font-size="21" font-weight="' + (isSel?'bold':'normal') + '" fill="' + (isSel?'#1e3a8a':'#374151') + '">' + name + '</text>');
-          if (s.cost) out.push('<text x="' + (cx+10) + '" y="' + (ny+44) + '" font-size="18" fill="#2563eb">&#165;' + parseFloat(s.cost).toLocaleString() + '</text>');
-          if (s.leadTime) out.push('<text x="' + (cx+10) + '" y="' + (ny+60) + '" font-size="18" fill="#64748b">LT:' + s.leadTime + '日</text>');
-
+          // サプライヤ名
+          var name = (s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+          out.push('<text x="' + (cx+12) + '" y="' + (ny+32) + '" font-size="' + FS_NAME + '" font-weight="' + (isSel?'bold':'normal') + '" fill="' + (isSel?'#1e40af':'#1e293b') + '">' + name + '</text>');
+          // コスト
+          if (s.cost) out.push('<text x="' + (cx+12) + '" y="' + (ny+56) + '" font-size="' + FS_INFO + '" fill="#2563eb">&#165;' + parseFloat(s.cost).toLocaleString() + '</text>');
+          // LT
+          if (s.leadTime) out.push('<text x="' + (cx+12) + '" y="' + (ny+76) + '" font-size="' + FS_INFO + '" fill="#64748b">LT: ' + s.leadTime + ' 日</text>');
           // スコアバー
           var score = scores[si] || 0;
           var sc2 = score >= 70 ? '#22c55e' : score >= 40 ? '#f59e0b' : '#ef4444';
-          out.push('<rect x="' + (cx+10) + '" y="' + (ny+NH-18) + '" width="' + (NW-20) + '" height="5" rx="2" fill="#e2e8f0"/>');
-          out.push('<rect x="' + (cx+10) + '" y="' + (ny+NH-18) + '" width="' + ((NW-20)*score/100) + '" height="5" rx="2" fill="' + sc2 + '"/>');
+          out.push('<rect x="' + (cx+12) + '" y="' + (ny+NH-18) + '" width="' + (NW-24) + '" height="7" rx="3" fill="#e2e8f0"/>');
+          out.push('<rect x="' + (cx+12) + '" y="' + (ny+NH-18) + '" width="' + Math.round((NW-24)*score/100) + '" height="7" rx="3" fill="' + sc2 + '"/>');
         });
 
-        // 工程間矢印（採用→採用 緑）
-        if (ci > 0 && partYMap[part.id][ci-1] && partYMap[part.id][ci-1].selY && selY) {
-          var px = contentX + (ci-1)*(NW+CGAP) + NW;
-          out.push('<line x1="' + px + '" y1="' + partYMap[part.id][ci-1].selY + '" x2="' + (cx-4) + '" y2="' + selY + '" stroke="#16a34a" stroke-width="2" marker-end="url(#ga)"/>');
+        // 矢印（採用）
+        if (ci > 0 && partYMap[part.id][ci-1] && partYMap[part.id][ci-1].selY !== null && selY !== null) {
+          var px = LEFT + (ci-1)*(NW+CGAP) + NW;
+          out.push('<line x1="' + px + '" y1="' + partYMap[part.id][ci-1].selY + '" x2="' + (cx-6) + '" y2="' + selY + '" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ga)"/>');
         }
-        // 検討矢印（黄色点線）
-        if (ci > 0 && partYMap[part.id][ci-1] && partYMap[part.id][ci-1].winY && winY) {
-          var px = contentX + (ci-1)*(NW+CGAP) + NW;
-          out.push('<line x1="' + px + '" y1="' + partYMap[part.id][ci-1].winY + '" x2="' + (cx-4) + '" y2="' + winY + '" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#gy)" opacity="0.8"/>');
+        // 矢印（検討・黄色点線）
+        if (ci > 0 && partYMap[part.id][ci-1] && partYMap[part.id][ci-1].winY !== null && winY !== null) {
+          var px = LEFT + (ci-1)*(NW+CGAP) + NW;
+          out.push('<line x1="' + px + '" y1="' + partYMap[part.id][ci-1].winY + '" x2="' + (cx-6) + '" y2="' + winY + '" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#gy)" opacity="0.85"/>');
         }
 
         partYMap[part.id][ci] = { selY: selY, winY: winY, x: cx };
       });
 
-      curY += rowH + ROW_GAP;
+      curY += rh + ROW_GAP;
     });
-    curY += 8;
+    curY += 12;
   });
 
-  // 部品間合流線（青）
+  // 部品間合流線（青の破線）
   if (crossLinks && crossLinks.length) {
     crossLinks.forEach(function(link) {
       var from = partYMap[link.fromPartId] && partYMap[link.fromPartId][link.fromProcIdx];
       var to   = partYMap[link.toPartId]   && partYMap[link.toPartId][link.toProcIdx];
       if (!from || !to) return;
-      var x1 = from.x + NW, y1 = from.selY || (from.selY);
-      var x2 = to.x,         y2 = to.selY   || (to.selY);
-      if (!y1 || !y2) return;
-      out.push('<path d="M'+x1+','+y1+' C'+(x1+60)+','+y1+' '+(x2-60)+','+y2+' '+x2+','+y2+'" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#gb)" opacity="0.85"/>');
+      var x1 = from.x + NW;
+      var y1 = from.selY !== null ? from.selY : null;
+      var x2 = to.x;
+      var y2 = to.selY !== null ? to.selY : null;
+      if (y1 === null || y2 === null) return;
+      var cx1 = x1 + 80, cx2 = x2 - 80;
+      out.push('<path d="M' + x1 + ',' + y1 + ' C' + cx1 + ',' + y1 + ' ' + cx2 + ',' + y2 + ' ' + x2 + ',' + y2 + '" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#gb)" opacity="0.9"/>');
     });
   }
 
