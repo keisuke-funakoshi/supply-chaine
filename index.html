@@ -1238,11 +1238,26 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
                   )}
                 </div>
 
-                {/* 中分類+部品列 */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {groupParts.map(function(part, pi) {
-                    var sc = subCategories.find(function(s){ return s.id === part.subCategoryId; });
-                    var cell0 = getCell(part.id, 0);
+                {/* 中分類でグループ化した部品列 */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+                  {(function() {
+                    // 中分類でサブグループ化
+                    var scGroups = {};
+                    var scOrder = [];
+                    groupParts.forEach(function(part) {
+                      var scId = part.subCategoryId || "__none__";
+                      if (!scGroups[scId]) { scGroups[scId] = []; scOrder.push(scId); }
+                      scGroups[scId].push(part);
+                    });
+                    return scOrder.map(function(scId) {
+                      var scParts = scGroups[scId];
+                      var sc = scId !== "__none__" ? subCategories.find(function(s){ return s.id === scId; }) : null;
+                      var scBorderColor = sc && cat ? cat.color + "66" : "#1e293b";
+                      return (
+                        <div key={scId} style={{ border: sc ? "1px solid " + scBorderColor : "none", borderRadius: sc ? 10 : 0, padding: sc ? "8px 8px 4px" : 0 }}>
+                          {sc && <div style={{ fontSize: 10, color: cat ? cat.color : "#64748b", fontWeight: 800, marginBottom: 6, paddingLeft: 2 }}>{sc.name}</div>}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {scParts.map(function(part, pi) {
                     var adoptedCost = processes.reduce(function(sum, proc, ci) {
                       var cell = getCell(part.id, ci);
                       var sel = cell && cell.suppliers ? cell.suppliers.find(function(s){ return s.id === cell.selected; }) : null;
@@ -1253,9 +1268,9 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
 
                     return (
                       <div key={part.id} style={{ display: "flex", alignItems: "flex-start", position: "relative", zIndex: 1 }}>
-                        {/* 中分類+部品ラベル */}
-                        <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid " + (sc ? cat.color + "44" : "#1e293b"), borderRadius: 8, padding: "8px 10px", boxSizing: "border-box" }}>
-                          {sc && <div style={{ fontSize: 9, color: cat ? cat.color : "#64748b", fontWeight: 700, marginBottom: 2 }}>{sc.name}</div>}
+                        {/* 部品ラベル */}
+                        <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "8px 10px", boxSizing: "border-box" }}>
+                          {false && null}
                           <input value={part.name}
                             onChange={function(e) {
                               var next = parts.map(function(p) { return p.id === part.id ? Object.assign({}, p, { name: e.target.value }) : p; });
@@ -1309,7 +1324,6 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
                                 <div style={{ width: FNODE_W, position: "relative" }}
                                   ref={function(el) {
                                     if (el) { nodeRefs.current[part.id + "_" + ci] = el; }
-                                    if (el && selected) { nodeRefs.current[part.id + "_" + ci + "_adopted"] = el; }
                                   }}>
                                   {suppliers.length === 0 ? (
                                     <div onClick={function(){ onOpenModal(part.id, part.name, ci); }}
@@ -1381,7 +1395,12 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
                         </div>
                       </div>
                     );
-                  })}
+                            })}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </div>
