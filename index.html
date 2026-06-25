@@ -245,201 +245,213 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 
 // --- PDF出力（フロー図SVGをPDF化） ------------------------------------
 // --- PDF出力（白背景・全部品/部品ごと） -----------------------------
-function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell, crossLinks) {
+function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks) {
   var procNames = processes.map(function(p){return p.name;});
-
-  // サイズ定義（大きめに設定）
-  var CAT_W = 36;   // 大分類ボックス幅
-  var NW = 280;     // 工程セル幅
-  var NH = 140;     // サプライヤカード高さ
-  var NGAP = 8;     // カード間隔
-  var CGAP = 48;    // 工程間隔
-  var LW = 200;     // 部品ラベル幅
-  var HDRH = 52;    // 工程ヘッダー高さ
-  var PAD = 16;     // 余白
-  var ROW_GAP = 20; // 部品行間隔
-  var LEFT = PAD + CAT_W + 10 + LW + 10; // コンテンツ開始X
-
-  // フォントサイズ
-  var FS_PROC = 18;   // 工程名
-  var FS_NAME = 20;   // サプライヤ名
-  var FS_INFO = 16;   // コスト・LT
-  var FS_BADGE = 12;  // バッジ
-  var FS_PART = 18;   // 部品名
-  var FS_CAT = 14;    // 大分類名（縦書き）
+  var CAT_W=36, NW=260, NH=130, NGAP=6, CGAP=44, LW=180, SC_W=20, HDRH=48, PAD=16, ROW_GAP=14;
+  var FS_PROC=17, FS_NAME=19, FS_INFO=14, FS_BADGE=11, FS_PART=16, FS_CAT=13, FS_SC=11;
 
   // 大分類でグループ化
-  var catMap = {};
-  var catOrder = [];
-  targetParts.forEach(function(part) {
-    var cid = part.categoryId;
-    if (!catMap[cid]) { catMap[cid] = []; catOrder.push(cid); }
-    catMap[cid].push(part);
+  var catMap={}, catOrder=[];
+  targetParts.forEach(function(part){
+    if(!catMap[part.categoryId]){catMap[part.categoryId]=[];catOrder.push(part.categoryId);}
+    catMap[part.categoryId].push(part);
   });
 
   // 各部品の行高さ
-  function partRowH(part) {
-    var maxRows = 1;
-    procNames.forEach(function(proc, ci) {
-      var cell = getCell(part.id, ci);
-      var cnt = cell && cell.suppliers ? cell.suppliers.length : 0;
-      if (cnt > maxRows) maxRows = cnt;
+  function partRowH(part){
+    var maxRows=1;
+    procNames.forEach(function(proc,ci){
+      var cell=getCell(part.id,ci);
+      var cnt=cell&&cell.suppliers?cell.suppliers.length:0;
+      if(cnt>maxRows)maxRows=cnt;
     });
-    return maxRows * (NH + NGAP) - NGAP;
+    return maxRows*(NH+NGAP)-NGAP;
   }
 
-  // 全体幅・高さ
-  var svgW = LEFT + procNames.length * NW + (procNames.length - 1) * CGAP + PAD;
-
-  // 高さは事前計算
-  var totalH = PAD + 28; // タイトル
-  catOrder.forEach(function(catId) {
-    totalH += HDRH + 10; // 工程ヘッダー
-    catMap[catId].forEach(function(part) {
-      totalH += partRowH(part) + ROW_GAP;
+  // 中分類でサブグループ化
+  function groupBySubCat(parts2){
+    var map={},order=[];
+    parts2.forEach(function(p){
+      var k=p.subCategoryId||'__none__';
+      if(!map[k]){map[k]=[];order.push(k);}
+      map[k].push(p);
     });
-    totalH += 12;
+    return {map:map,order:order};
+  }
+
+  // LEFT = PAD + CAT_W + 8 + SC_W + 8 + LW + 8
+  var LEFT = PAD+CAT_W+8+SC_W+8+LW+8;
+  var svgW = LEFT+procNames.length*NW+(procNames.length-1)*CGAP+PAD;
+
+  // 総高さ計算
+  var totalH=PAD+28;
+  catOrder.forEach(function(catId){
+    totalH+=HDRH+10;
+    var sg=groupBySubCat(catMap[catId]);
+    sg.order.forEach(function(scId){
+      if(scId!=='__none__')totalH+=18;
+      sg.map[scId].forEach(function(p){totalH+=partRowH(p)+ROW_GAP;});
+      totalH+=6;
+    });
+    totalH+=8;
   });
 
-  var out = [];
-  out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + svgW + ' ' + totalH + '" preserveAspectRatio="xMinYMin meet" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
-  out.push('<rect width="' + svgW + '" height="' + totalH + '" fill="#fff"/>');
+  var out=[];
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+svgW+' '+totalH+'" preserveAspectRatio="xMinYMin meet" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
+  out.push('<rect width="'+svgW+'" height="'+totalH+'" fill="#fff"/>');
   out.push('<defs>'+
     '<marker id="ga" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#16a34a"/></marker>'+
     '<marker id="gb" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#6366f1"/></marker>'+
     '<marker id="gy" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#f59e0b"/></marker>'+
     '</defs>');
+  out.push('<text x="'+PAD+'" y="'+(PAD+18)+'" font-size="18" font-weight="bold" fill="#1e293b">'+(themeName||'').replace(/&/g,'&amp;')+'</text>');
 
-  // タイトル
-  out.push('<text x="' + PAD + '" y="' + (PAD + 18) + '" font-size="20" font-weight="bold" fill="#1e293b">' + (themeName||'').replace(/&/g,'&amp;') + '</text>');
+  var curY=PAD+28;
+  var partYMap={};
 
-  var curY = PAD + 28;
-  var partYMap = {};
-
-  catOrder.forEach(function(catId) {
-    var cat = categories.find(function(c){ return c.id === catId; });
-    var catParts = catMap[catId];
-    var catColor = (cat && cat.color) ? cat.color : '#334155';
-    var catName = cat ? (cat.name||'') : '';
+  catOrder.forEach(function(catId){
+    var cat=categories.find(function(c){return c.id===catId;});
+    var catParts=catMap[catId];
+    var catColor=(cat&&cat.color)?cat.color:'#334155';
+    var catName=cat?cat.name:'';
 
     // 工程ヘッダー
-    procNames.forEach(function(proc, ci) {
-      var hx = LEFT + ci * (NW + CGAP);
-      out.push('<rect x="' + hx + '" y="' + curY + '" width="' + NW + '" height="' + HDRH + '" rx="8" fill="#1e293b"/>');
-      out.push('<text x="' + (hx + NW/2) + '" y="' + (curY + HDRH/2 + FS_PROC*0.35) + '" text-anchor="middle" font-size="' + FS_PROC + '" font-weight="bold" fill="#fff">' + proc.replace(/&/g,'&amp;') + '</text>');
-      if (ci < procNames.length - 1) {
-        var lx1 = hx + NW + 8, lx2 = hx + NW + CGAP - 8, ly = curY + HDRH/2;
-        out.push('<line x1="' + lx1 + '" y1="' + ly + '" x2="' + lx2 + '" y2="' + ly + '" stroke="#64748b" stroke-width="2"/>');
-        out.push('<polygon points="' + lx2 + ',' + (ly-4) + ' ' + (lx2+8) + ',' + ly + ' ' + lx2 + ',' + (ly+4) + '" fill="#64748b"/>');
+    procNames.forEach(function(proc,ci){
+      var hx=LEFT+ci*(NW+CGAP);
+      out.push('<rect x="'+hx+'" y="'+curY+'" width="'+NW+'" height="'+HDRH+'" rx="8" fill="#1e293b"/>');
+      out.push('<text x="'+(hx+NW/2)+'" y="'+(curY+HDRH/2+FS_PROC*0.35)+'" text-anchor="middle" font-size="'+FS_PROC+'" font-weight="bold" fill="#fff">'+proc.replace(/&/g,'&amp;')+'</text>');
+      if(ci<procNames.length-1){
+        var lx1=hx+NW+8,lx2=hx+NW+CGAP-8,ly=curY+HDRH/2;
+        out.push('<line x1="'+lx1+'" y1="'+ly+'" x2="'+lx2+'" y2="'+ly+'" stroke="#64748b" stroke-width="2"/>');
+        out.push('<polygon points="'+lx2+','+(ly-4)+' '+(lx2+8)+','+ly+' '+lx2+','+(ly+4)+'" fill="#64748b"/>');
       }
     });
-    curY += HDRH + 10;
+    curY+=HDRH+10;
 
-    // 大分類ブロック高さ
-    var catBlockH = catParts.reduce(function(s, p){ return s + partRowH(p) + ROW_GAP; }, 0) - ROW_GAP;
-
-    // 大分類ボックス（縦書き文字）
-    out.push('<rect x="' + PAD + '" y="' + curY + '" width="' + CAT_W + '" height="' + catBlockH + '" rx="6" fill="' + catColor + '22" stroke="' + catColor + '" stroke-width="2.5"/>');
-    var chars = catName.split('');
-    var charH = FS_CAT + 4;
-    var startY = curY + catBlockH/2 - (chars.length * charH)/2 + FS_CAT;
-    chars.forEach(function(ch, ci2) {
-      out.push('<text x="' + (PAD + CAT_W/2) + '" y="' + (startY + ci2*charH) + '" text-anchor="middle" font-size="' + FS_CAT + '" font-weight="bold" fill="' + catColor + '">' + ch.replace(/&/g,'&amp;') + '</text>');
+    // 大分類ブロック高さ計算
+    var sg=groupBySubCat(catParts);
+    var catBlockH=0;
+    sg.order.forEach(function(scId){
+      if(scId!=='__none__')catBlockH+=18;
+      sg.map[scId].forEach(function(p){catBlockH+=partRowH(p)+ROW_GAP;});
+      catBlockH+=6;
     });
 
-    catParts.forEach(function(part) {
-      var rh = partRowH(part);
-      partYMap[part.id] = {};
+    // 大分類ボックス
+    out.push('<rect x="'+PAD+'" y="'+curY+'" width="'+CAT_W+'" height="'+catBlockH+'" rx="6" fill="'+catColor+'22" stroke="'+catColor+'" stroke-width="2.5"/>');
+    var chars=catName.split('');
+    var charH=FS_CAT+4;
+    var startY=curY+catBlockH/2-(chars.length*charH)/2+FS_CAT;
+    chars.forEach(function(ch,ci2){
+      out.push('<text x="'+(PAD+CAT_W/2)+'" y="'+(startY+ci2*charH)+'" text-anchor="middle" font-size="'+FS_CAT+'" font-weight="bold" fill="'+catColor+'">'+ch.replace(/&/g,'&amp;')+'</text>');
+    });
 
-      // 部品ラベル（ページ跨ぎ防止: break-inside:avoid相当→SVGなので全体を1ブロックで描画）
-      var labelX = PAD + CAT_W + 10;
-      out.push('<rect x="' + labelX + '" y="' + curY + '" width="' + LW + '" height="' + rh + '" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>');
-      // 部品名（縦中央）
-      out.push('<text x="' + (labelX + LW/2) + '" y="' + (curY + rh/2 + FS_PART*0.35) + '" text-anchor="middle" font-size="' + FS_PART + '" font-weight="bold" fill="#334155">' + (part.name||'').replace(/&/g,'&amp;') + '</text>');
+    var scBlockY=curY;
+    sg.order.forEach(function(scId){
+      var sc=scId!=='__none__'?(subCategories||[]).find(function(s){return s.id===scId;}):null;
 
-      // 各工程
-      procNames.forEach(function(proc, ci) {
-        var cell = getCell(part.id, ci);
-        var suppliers = cell && cell.suppliers ? cell.suppliers : [];
-        var selected = cell ? cell.selected : null;
-        var candidates = cell && cell.candidates ? cell.candidates : [];
-        var scores = suppliers.map(function(s){ return scoreSupplier(s, suppliers); });
-        var maxScore = scores.length ? Math.max.apply(null, scores) : 0;
-        var winnerId = maxScore > 0 ? (suppliers[scores.indexOf(maxScore)]||{}).id : null;
-        var cx = LEFT + ci * (NW + CGAP);
-        var selY = null, winY = null;
+      // 中分類ブロック高さ
+      var scBlockH=0;
+      sg.map[scId].forEach(function(p){scBlockH+=partRowH(p)+ROW_GAP;});
+      scBlockH-=ROW_GAP;
+      if(sc){scBlockH+=18+ROW_GAP;}
 
-        suppliers.forEach(function(s, si) {
-          var ny = curY + si * (NH + NGAP);
-          var isSel = s.id === selected;
-          var isCand = candidates.indexOf(s.id) >= 0;
-          var isWin = s.id === winnerId && !isSel;
-          var bg = isSel ? '#dbeafe' : isCand ? '#e0f2fe' : '#f8fafc';
-          var strokeC = isSel ? '#2563eb' : isCand ? '#93c5fd' : '#e2e8f0';
-          var strokeW = isSel ? 3 : 1.5;
+      // 中分類ボックス（枠線）
+      if(sc){
+        var scX=PAD+CAT_W+8;
+        out.push('<rect x="'+scX+'" y="'+curY+'" width="'+(svgW-PAD-scX)+'" height="'+(scBlockH+6)+'" rx="6" fill="none" stroke="'+catColor+'55" stroke-width="1.5" stroke-dasharray="4,3"/>');
+        out.push('<rect x="'+(scX+4)+'" y="'+(curY-8)+'" width="'+(sc.name.length*FS_SC*0.65+12)+'" height="16" rx="4" fill="'+catColor+'"/>');
+        out.push('<text x="'+(scX+10)+'" y="'+(curY+2)+'" font-size="'+FS_SC+'" font-weight="bold" fill="#fff">'+sc.name.replace(/&/g,'&amp;')+'</text>');
+        curY+=18;
+      }
 
-          out.push('<rect x="' + cx + '" y="' + ny + '" width="' + NW + '" height="' + NH + '" rx="10" fill="' + bg + '" stroke="' + strokeC + '" stroke-width="' + strokeW + '"/>');
+      sg.map[scId].forEach(function(part){
+        var rh=partRowH(part);
+        partYMap[part.id]={};
 
-          // バッジ
-          if (isSel) {
-            out.push('<rect x="' + (cx+6) + '" y="' + (ny-10) + '" width="52" height="18" rx="9" fill="#2563eb"/>');
-            out.push('<text x="' + (cx+32) + '" y="' + (ny+3) + '" text-anchor="middle" font-size="' + FS_BADGE + '" font-weight="bold" fill="#fff">&#x2713; 採用</text>');
-            selY = ny + NH/2;
-          } else if (isWin) {
-            out.push('<rect x="' + (cx+6) + '" y="' + (ny-10) + '" width="40" height="18" rx="9" fill="#f59e0b"/>');
-            out.push('<text x="' + (cx+26) + '" y="' + (ny+3) + '" text-anchor="middle" font-size="' + FS_BADGE + '" fill="#fff">検討</text>');
-            winY = ny + NH/2;
-          } else if (isCand) {
-            out.push('<rect x="' + (cx+6) + '" y="' + (ny-10) + '" width="40" height="18" rx="9" fill="#475569"/>');
-            out.push('<text x="' + (cx+26) + '" y="' + (ny+3) + '" text-anchor="middle" font-size="' + FS_BADGE + '" fill="#cbd5e1">候補</text>');
+        // 部品ラベル
+        var labelX=PAD+CAT_W+8+SC_W+8;
+        out.push('<rect x="'+labelX+'" y="'+curY+'" width="'+LW+'" height="'+rh+'" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>');
+        out.push('<text x="'+(labelX+LW/2)+'" y="'+(curY+rh/2+FS_PART*0.35)+'" text-anchor="middle" font-size="'+FS_PART+'" font-weight="bold" fill="#334155">'+(part.name||'').replace(/&/g,'&amp;')+'</text>');
+
+        // 各工程
+        procNames.forEach(function(proc,ci){
+          var cell=getCell(part.id,ci);
+          var suppliers=cell&&cell.suppliers?cell.suppliers:[];
+          var selected=cell?cell.selected:null;
+          var candidates=cell&&cell.candidates?cell.candidates:[];
+          var scores=suppliers.map(function(s){return scoreSupplier(s,suppliers);});
+          var maxScore=scores.length?Math.max.apply(null,scores):0;
+          var winnerId=maxScore>0?(suppliers[scores.indexOf(maxScore)]||{}).id:null;
+          var cx=LEFT+ci*(NW+CGAP);
+          var selY=null,winY=null;
+
+          // 空セルはグレー塗り
+          if(suppliers.length===0){
+            out.push('<rect x="'+cx+'" y="'+curY+'" width="'+NW+'" height="'+rh+'" rx="8" fill="#f1f5f9" stroke="#e2e8f0" stroke-width="1"/>');
+            out.push('<text x="'+(cx+NW/2)+'" y="'+(curY+rh/2+5)+'" text-anchor="middle" font-size="13" fill="#cbd5e1">—</text>');
+          } else {
+            suppliers.forEach(function(s,si){
+              var ny=curY+si*(NH+NGAP);
+              var isSel=s.id===selected;
+              var isCand=candidates.indexOf(s.id)>=0;
+              var isWin=s.id===winnerId&&!isSel;
+              var bg=isSel?'#dbeafe':isCand?'#e0f2fe':'#f8fafc';
+              var strokeC=isSel?'#2563eb':isCand?'#93c5fd':'#e2e8f0';
+              out.push('<rect x="'+cx+'" y="'+ny+'" width="'+NW+'" height="'+NH+'" rx="8" fill="'+bg+'" stroke="'+strokeC+'" stroke-width="'+(isSel?3:1.5)+'"/>');
+              if(isSel){
+                out.push('<rect x="'+(cx+5)+'" y="'+(ny-9)+'" width="48" height="16" rx="8" fill="#2563eb"/>');
+                out.push('<text x="'+(cx+29)+'" y="'+(ny+3)+'" text-anchor="middle" font-size="'+FS_BADGE+'" font-weight="bold" fill="#fff">&#x2713;採用</text>');
+                selY=ny+NH/2;
+              } else if(isWin){
+                out.push('<rect x="'+(cx+5)+'" y="'+(ny-9)+'" width="36" height="16" rx="8" fill="#f59e0b"/>');
+                out.push('<text x="'+(cx+23)+'" y="'+(ny+3)+'" text-anchor="middle" font-size="'+FS_BADGE+'" fill="#fff">検討</text>');
+                winY=ny+NH/2;
+              } else if(isCand){
+                out.push('<rect x="'+(cx+5)+'" y="'+(ny-9)+'" width="36" height="16" rx="8" fill="#475569"/>');
+                out.push('<text x="'+(cx+23)+'" y="'+(ny+3)+'" text-anchor="middle" font-size="'+FS_BADGE+'" fill="#cbd5e1">候補</text>');
+              }
+              var name=(s.name||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+              out.push('<text x="'+(cx+10)+'" y="'+(ny+28)+'" font-size="'+FS_NAME+'" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e40af':'#1e293b')+'">'+name+'</text>');
+              if(s.cost)out.push('<text x="'+(cx+10)+'" y="'+(ny+50)+'" font-size="'+FS_INFO+'" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
+              if(s.leadTime)out.push('<text x="'+(cx+10)+'" y="'+(ny+68)+'" font-size="'+FS_INFO+'" fill="#64748b">LT:'+s.leadTime+'日</text>');
+              var score=scores[si]||0;
+              var sc2=score>=70?'#22c55e':score>=40?'#f59e0b':'#ef4444';
+              out.push('<rect x="'+(cx+10)+'" y="'+(ny+NH-16)+'" width="'+(NW-20)+'" height="6" rx="3" fill="#e2e8f0"/>');
+              out.push('<rect x="'+(cx+10)+'" y="'+(ny+NH-16)+'" width="'+Math.round((NW-20)*score/100)+'" height="6" rx="3" fill="'+sc2+'"/>');
+            });
           }
 
-          // サプライヤ名
-          var name = (s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-          out.push('<text x="' + (cx+12) + '" y="' + (ny+32) + '" font-size="' + FS_NAME + '" font-weight="' + (isSel?'bold':'normal') + '" fill="' + (isSel?'#1e40af':'#1e293b') + '">' + name + '</text>');
-          // コスト
-          if (s.cost) out.push('<text x="' + (cx+12) + '" y="' + (ny+56) + '" font-size="' + FS_INFO + '" fill="#2563eb">&#165;' + parseFloat(s.cost).toLocaleString() + '</text>');
-          // LT
-          if (s.leadTime) out.push('<text x="' + (cx+12) + '" y="' + (ny+76) + '" font-size="' + FS_INFO + '" fill="#64748b">LT: ' + s.leadTime + ' 日</text>');
-          // スコアバー
-          var score = scores[si] || 0;
-          var sc2 = score >= 70 ? '#22c55e' : score >= 40 ? '#f59e0b' : '#ef4444';
-          out.push('<rect x="' + (cx+12) + '" y="' + (ny+NH-18) + '" width="' + (NW-24) + '" height="7" rx="3" fill="#e2e8f0"/>');
-          out.push('<rect x="' + (cx+12) + '" y="' + (ny+NH-18) + '" width="' + Math.round((NW-24)*score/100) + '" height="7" rx="3" fill="' + sc2 + '"/>');
+          // 採用矢印（緑）
+          if(ci>0&&partYMap[part.id][ci-1]&&partYMap[part.id][ci-1].selY!==null&&selY!==null){
+            var px=LEFT+(ci-1)*(NW+CGAP)+NW;
+            out.push('<line x1="'+px+'" y1="'+partYMap[part.id][ci-1].selY+'" x2="'+(cx-6)+'" y2="'+selY+'" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ga)"/>');
+          }
+          // 検討矢印（黄色点線）
+          if(ci>0&&partYMap[part.id][ci-1]&&partYMap[part.id][ci-1].winY!==null&&winY!==null){
+            var px=LEFT+(ci-1)*(NW+CGAP)+NW;
+            out.push('<line x1="'+px+'" y1="'+partYMap[part.id][ci-1].winY+'" x2="'+(cx-6)+'" y2="'+winY+'" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#gy)" opacity="0.8"/>');
+          }
+
+          partYMap[part.id][ci]={selY:selY,winY:winY,x:cx};
         });
 
-        // 矢印（採用）
-        if (ci > 0 && partYMap[part.id][ci-1] && partYMap[part.id][ci-1].selY !== null && selY !== null) {
-          var px = LEFT + (ci-1)*(NW+CGAP) + NW;
-          out.push('<line x1="' + px + '" y1="' + partYMap[part.id][ci-1].selY + '" x2="' + (cx-6) + '" y2="' + selY + '" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ga)"/>');
-        }
-        // 矢印（検討・黄色点線）
-        if (ci > 0 && partYMap[part.id][ci-1] && partYMap[part.id][ci-1].winY !== null && winY !== null) {
-          var px = LEFT + (ci-1)*(NW+CGAP) + NW;
-          out.push('<line x1="' + px + '" y1="' + partYMap[part.id][ci-1].winY + '" x2="' + (cx-6) + '" y2="' + winY + '" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#gy)" opacity="0.85"/>');
-        }
-
-        partYMap[part.id][ci] = { selY: selY, winY: winY, x: cx };
+        curY+=rh+ROW_GAP;
       });
-
-      curY += rh + ROW_GAP;
+      curY+=6;
     });
-    curY += 12;
+    curY+=8;
   });
 
-  // 部品間合流線（青の破線）
-  if (crossLinks && crossLinks.length) {
-    crossLinks.forEach(function(link) {
-      var from = partYMap[link.fromPartId] && partYMap[link.fromPartId][link.fromProcIdx];
-      var to   = partYMap[link.toPartId]   && partYMap[link.toPartId][link.toProcIdx];
-      if (!from || !to) return;
-      var x1 = from.x + NW;
-      var y1 = from.selY !== null ? from.selY : null;
-      var x2 = to.x;
-      var y2 = to.selY !== null ? to.selY : null;
-      if (y1 === null || y2 === null) return;
-      var cx1 = x1 + 80, cx2 = x2 - 80;
-      out.push('<path d="M' + x1 + ',' + y1 + ' C' + cx1 + ',' + y1 + ' ' + cx2 + ',' + y2 + ' ' + x2 + ',' + y2 + '" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#gb)" opacity="0.9"/>');
+  // 部品間合流線（青）
+  if(crossLinks&&crossLinks.length){
+    crossLinks.forEach(function(link){
+      var from=partYMap[link.fromPartId]&&partYMap[link.fromPartId][link.fromProcIdx];
+      var to=partYMap[link.toPartId]&&partYMap[link.toPartId][link.toProcIdx];
+      if(!from||!to)return;
+      var x1=from.x+NW,y1=from.selY,x2=to.x,y2=to.selY;
+      if(y1===null||y1===undefined||y2===null||y2===undefined)return;
+      out.push('<path d="M'+x1+','+y1+' C'+(x1+80)+','+y1+' '+(x2-80)+','+y2+' '+x2+','+y2+'" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#gb)" opacity="0.9"/>');
     });
   }
 
@@ -554,11 +566,11 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
   return out.join('');
 }
 
-function exportPDF(mode, themeName, targetParts, categories, processes, getCell, allParts, crossLinks) {
+function exportPDF(mode, themeName, targetParts, categories, subCategories, processes, getCell, allParts, crossLinks) {
   var pages = [];
   if (mode==="all") {
     // 全部品をまとめた大きなSVGを作る（合流線を描くため）
-    pages.push('<div>'+buildAllPartsSVG(themeName, targetParts, categories, processes, getCell, crossLinks || [])+'</div>');
+    pages.push('<div>'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
   } else {
     targetParts.forEach(function(part, i) {
       var cat = categories.find(function(c){return c.id===part.categoryId;});
@@ -1050,35 +1062,45 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
     // 同種の隣接工程ペアのみ線を引く（種別が変わる場合は線なし）
     var wLines = [], cLines = [];
     displayParts.forEach(function(part) {
-      // 各工程の代表を収集
-      var colReps = [];
+      // 候補線: 工程ヘッダー間を括る太い線（各部品で候補がある工程を収集）
+    // 候補がある工程の組み合わせで、工程ヘッダー間を結ぶ
+    var candProcPairs = {}; // "ci1_ci2" -> true
+    displayParts.forEach(function(part) {
+      var candCols = [];
       processes.forEach(function(proc, ci) {
         var cell = getCell(part.id, ci);
         if (!cell || !cell.suppliers || cell.suppliers.length === 0) return;
-        var adopted = cell.selected;
-        if (adopted) { colReps.push({ ci: ci, type: "adopted" }); return; }
-        // 採用なし: win優先、なければcand
-        var winEl = cont.querySelector('[data-node="' + part.id + '_' + ci + '_win"]');
-        if (winEl) { colReps.push({ ci: ci, type: "win" }); return; }
-        var candEl = cont.querySelector('[data-node="' + part.id + '_' + ci + '_cand"]');
-        if (candEl) { colReps.push({ ci: ci, type: "cand" }); return; }
+        if (!cell.selected) {
+          // 採用なし = 候補工程
+          var hasCand = cell.candidates && cell.candidates.length > 0;
+          var hasAny = cell.suppliers.length > 0;
+          if (hasAny) candCols.push(ci);
+        }
       });
-
-      // 隣接ペアで同種同士のみ線を引く
-      for (var i = 0; i < colReps.length - 1; i++) {
-        var a = colReps[i], b = colReps[i+1];
-        if (b.ci - a.ci !== 1) continue;        // 隣接工程のみ
-        if (a.type === "adopted" || b.type === "adopted") continue; // 採用は緑線で処理済み
-        if (a.type !== b.type) continue;         // 種別が異なる場合は線なし
-        var frPos = getElPos(cont, part.id, a.ci, a.type);
-        var trPos = getElPos(cont, part.id, b.ci, b.type);
-        if (!frPos || !trPos) continue;
-        var lineObj = { id: a.type+"_"+part.id+"_"+a.ci+"_"+b.ci,
-          x1: frPos.right, y1: frPos.top+frPos.height/2,
-          x2: trPos.left,  y2: trPos.top+trPos.height/2 };
-        if (a.type === "win")  wLines.push(lineObj);
-        if (a.type === "cand") cLines.push(lineObj);
+      for (var i = 0; i < candCols.length - 1; i++) {
+        var key = candCols[i] + "_" + candCols[i+1];
+        candProcPairs[key] = true;
       }
+    });
+    Object.keys(candProcPairs).forEach(function(key) {
+      var parts2 = key.split("_");
+      var ci1 = parseInt(parts2[0]), ci2 = parseInt(parts2[1]);
+      var el1 = nodeRefs.current["__proc_" + ci1];
+      var el2 = nodeRefs.current["__proc_" + ci2];
+      if (!el1 || !el2) return;
+      var r1 = el1.getBoundingClientRect();
+      var r2 = el2.getBoundingClientRect();
+      var cRect = cont.getBoundingClientRect();
+      var sl = cont.scrollLeft || 0;
+      cLines.push({
+        id: "cand_proc_" + key,
+        x1: r1.right - cRect.left + sl,
+        y1: r1.top - cRect.top + r1.height / 2,
+        x2: r2.left - cRect.left + sl,
+        y2: r2.top - cRect.top + r2.height / 2,
+        isProc: true
+      });
+    });
     });
     setWinLines(wLines);
     setCandLines(cLines);
@@ -1181,6 +1203,15 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
           })}
           {/* 候補→候補 黄色点線 */}
           {candLines.map(function(cl) {
+            if (cl.isProc) {
+              // 工程ヘッダー間の括り線（太い白線）
+              return (
+                <g key={cl.id} opacity={0.75}>
+                  <line x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#e2e8f0" strokeWidth={6} strokeLinecap="round"/>
+                  <line x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#fff" strokeWidth={2.5} strokeLinecap="round"/>
+                </g>
+              );
+            }
             return <line key={cl.id} x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,4" opacity={0.7}/>;
           })}
           {/* 部品間合流線 */}
@@ -1212,7 +1243,8 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
         {processes.map(function(proc, ci) {
           return (
             <div key={ci} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-              <div style={{ width: FNODE_W, background: "#1e293b", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+              <div style={{ width: FNODE_W, background: "#1e293b", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}
+                ref={function(el) { if (el) nodeRefs.current["__proc_" + ci] = el; }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{proc}</span>
               </div>
               {ci < processes.length - 1 && <div style={{ width: FNODE_GAP, flexShrink: 0 }}/>}
@@ -1696,7 +1728,7 @@ function App() {
     if (!targetParts.length) return;
     var allCrossLinks = (function(){ try { return JSON.parse(localStorage.getItem("shoury_crosslinks_v1") || "{}"); } catch(e){ return {}; } })();
     var thCrossLinks = allCrossLinks[activeThemeId] || [];
-    exportPDF(pdfMode, theme.name, targetParts, categories, processes, getCell, parts, thCrossLinks);
+    exportPDF(pdfMode, theme.name, targetParts, categories, subCategories, processes, getCell, parts, thCrossLinks);
   };
 
   const partDrag = useDragSort(parts, setParts);
