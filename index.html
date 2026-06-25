@@ -1627,7 +1627,7 @@ function App() {
     const name = newPartName.trim();
     const catId = resolvedPartCatId;
     if (!name || !catId) return;
-    setParts([...parts, { id: newId(), categoryId: catId, subCategoryId: subCatId, name }]);
+    setParts([...parts, { id: newId(), categoryId: catId, subCategoryId: newPartSubCatId || null, name }]);
     setNewPartName(""); setNewPartSubCatId("");
     // 追加後も選択中の大分類を維持（stateを確定値にセット）
     setNewPartCatId(catId);
