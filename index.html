@@ -248,15 +248,15 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell, crossLinks) {
   var procNames = processes.map(function(p){return p.name;});
   // サイズ定義
-  var CAT_W = 28;   // 大分類ボックス幅
-  var NW = 200;     // 工程セル幅
-  var NH = 100;     // サプライヤカード高さ
-  var NGAP = 6;     // カード間隔
-  var CGAP = 36;    // 工程間隔
-  var LW = 150;     // 部品ラベル幅
-  var HDRH = 38;    // 工程ヘッダー高さ
-  var PAD = 12;     // 余白
-  var ROW_GAP = 16; // 部品行間隔
+  var CAT_W = 42;   // 大分類ボックス幅
+  var NW = 300;     // 工程セル幅
+  var NH = 150;     // サプライヤカード高さ
+  var NGAP = 9;     // カード間隔
+  var CGAP = 54;    // 工程間隔
+  var LW = 225;     // 部品ラベル幅
+  var HDRH = 57;    // 工程ヘッダー高さ
+  var PAD = 18;     // 余白
+  var ROW_GAP = 24; // 部品行間隔
 
   // 大分類でグループ化
   var catMap = {};
@@ -303,7 +303,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
     '</defs>');
 
   // タイトル
-  out.push('<text x="' + PAD + '" y="' + (PAD + 14) + '" font-size="14" font-weight="bold" fill="#1e293b">' + (themeName||'').replace(/&/g,'&amp;') + '</text>');
+  out.push('<text x="' + PAD + '" y="' + (PAD + 14) + '" font-size="21" font-weight="bold" fill="#1e293b">' + (themeName||'').replace(/&/g,'&amp;') + '</text>');
 
   var curY = PAD + 22;
   var partYMap = {}; // partId -> {ci -> {selY, winY, x}}
@@ -318,7 +318,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
     procNames.forEach(function(proc, ci) {
       var hx = contentX + ci * (NW + CGAP);
       out.push('<rect x="' + hx + '" y="' + curY + '" width="' + NW + '" height="' + HDRH + '" rx="6" fill="#1e293b"/>');
-      out.push('<text x="' + (hx + NW/2) + '" y="' + (curY + HDRH/2 + 5) + '" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">' + proc.replace(/&/g,'&amp;') + '</text>');
+      out.push('<text x="' + (hx + NW/2) + '" y="' + (curY + HDRH/2 + 5) + '" text-anchor="middle" font-size="20" font-weight="bold" fill="#fff">' + proc.replace(/&/g,'&amp;') + '</text>');
       if (ci < procNames.length - 1) {
         out.push('<line x1="' + (hx + NW + 6) + '" y1="' + (curY + HDRH/2) + '" x2="' + (hx + NW + CGAP - 6) + '" y2="' + (curY + HDRH/2) + '" stroke="#64748b" stroke-width="1.5"/>');
       }
@@ -336,7 +336,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
     var charH = 15;
     chars.forEach(function(ch, ci2) {
       var cy = midY - (chars.length * charH / 2) + ci2 * charH + 12;
-      out.push('<text x="' + (PAD + CAT_W/2) + '" y="' + cy + '" text-anchor="middle" font-size="12" font-weight="bold" fill="' + catColor + '">' + ch + '</text>');
+      out.push('<text x="' + (PAD + CAT_W/2) + '" y="' + cy + '" text-anchor="middle" font-size="18" font-weight="bold" fill="' + catColor + '">' + ch + '</text>');
     });
 
     catParts.forEach(function(part) {
@@ -346,7 +346,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
       // 部品ラベル
       var labelX = PAD + CAT_W + 8;
       out.push('<rect x="' + labelX + '" y="' + curY + '" width="' + LW + '" height="' + rowH + '" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>');
-      out.push('<text x="' + (labelX + LW/2) + '" y="' + (curY + rowH/2 + 5) + '" text-anchor="middle" font-size="13" font-weight="bold" fill="#334155">' + (part.name||'').replace(/&/g,'&amp;') + '</text>');
+      out.push('<text x="' + (labelX + LW/2) + '" y="' + (curY + rowH/2 + 5) + '" text-anchor="middle" font-size="20" font-weight="bold" fill="#334155">' + (part.name||'').replace(/&/g,'&amp;') + '</text>');
 
       // 各工程
       procNames.forEach(function(proc, ci) {
@@ -375,27 +375,27 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
           // バッジ
           if (isSel) {
             out.push('<rect x="' + (cx+4) + '" y="' + (ny-8) + '" width="36" height="14" rx="7" fill="#2563eb"/>');
-            out.push('<text x="' + (cx+22) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">&#x2713;採用</text>');
+            out.push('<text x="' + (cx+22) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">&#x2713;採用</text>');
             selY = ny + NH/2;
           } else if (isWin) {
             out.push('<rect x="' + (cx+4) + '" y="' + (ny-8) + '" width="28" height="14" rx="7" fill="#f59e0b"/>');
-            out.push('<text x="' + (cx+18) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="9" fill="#fff">検討</text>');
+            out.push('<text x="' + (cx+18) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="14" fill="#fff">検討</text>');
             winY = ny + NH/2;
           } else if (isCand) {
             out.push('<rect x="' + (cx+4) + '" y="' + (ny-8) + '" width="28" height="14" rx="7" fill="#334155"/>');
-            out.push('<text x="' + (cx+18) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="9" fill="#94a3b8">候補</text>');
+            out.push('<text x="' + (cx+18) + '" y="' + (ny+1) + '" text-anchor="middle" font-size="14" fill="#94a3b8">候補</text>');
           }
 
           var name = (s.name || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-          out.push('<text x="' + (cx+10) + '" y="' + (ny+24) + '" font-size="14" font-weight="' + (isSel?'bold':'normal') + '" fill="' + (isSel?'#1e3a8a':'#374151') + '">' + name + '</text>');
-          if (s.cost) out.push('<text x="' + (cx+10) + '" y="' + (ny+44) + '" font-size="12" fill="#2563eb">&#165;' + parseFloat(s.cost).toLocaleString() + '</text>');
-          if (s.leadTime) out.push('<text x="' + (cx+10) + '" y="' + (ny+60) + '" font-size="12" fill="#64748b">LT:' + s.leadTime + '日</text>');
+          out.push('<text x="' + (cx+10) + '" y="' + (ny+24) + '" font-size="21" font-weight="' + (isSel?'bold':'normal') + '" fill="' + (isSel?'#1e3a8a':'#374151') + '">' + name + '</text>');
+          if (s.cost) out.push('<text x="' + (cx+10) + '" y="' + (ny+44) + '" font-size="18" fill="#2563eb">&#165;' + parseFloat(s.cost).toLocaleString() + '</text>');
+          if (s.leadTime) out.push('<text x="' + (cx+10) + '" y="' + (ny+60) + '" font-size="18" fill="#64748b">LT:' + s.leadTime + '日</text>');
 
           // スコアバー
           var score = scores[si] || 0;
           var sc2 = score >= 70 ? '#22c55e' : score >= 40 ? '#f59e0b' : '#ef4444';
-          out.push('<rect x="' + (cx+10) + '" y="' + (ny+NH-14) + '" width="' + (NW-20) + '" height="5" rx="2" fill="#e2e8f0"/>');
-          out.push('<rect x="' + (cx+10) + '" y="' + (ny+NH-14) + '" width="' + ((NW-20)*score/100) + '" height="5" rx="2" fill="' + sc2 + '"/>');
+          out.push('<rect x="' + (cx+10) + '" y="' + (ny+NH-18) + '" width="' + (NW-20) + '" height="5" rx="2" fill="#e2e8f0"/>');
+          out.push('<rect x="' + (cx+10) + '" y="' + (ny+NH-18) + '" width="' + ((NW-20)*score/100) + '" height="5" rx="2" fill="' + sc2 + '"/>');
         });
 
         // 工程間矢印（採用→採用 緑）
