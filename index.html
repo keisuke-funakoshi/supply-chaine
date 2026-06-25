@@ -246,191 +246,192 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 // --- PDF出力（フロー図SVGをPDF化） ------------------------------------
 // --- PDF出力（白背景・全部品/部品ごと） -----------------------------
 function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks) {
-  var procNames = processes.map(function(p){return p.name;});
-  var CAT_W=36, NW=260, NH=130, NGAP=6, CGAP=44, LW=180, SC_W=20, HDRH=48, PAD=16, ROW_GAP=14;
-  var FS_PROC=17, FS_NAME=19, FS_INFO=14, FS_BADGE=11, FS_PART=16, FS_CAT=13, FS_SC=11;
+  var procNames = processes.map(function(p){return typeof p==='string'?p:p.name;});
+  var CAT_W=32, NW=240, NH=120, NGAP=6, CGAP=40, LW=160, HDRH=44, PAD=14, ROW_GAP=12;
+  var LEFT = PAD + CAT_W + 10 + LW + 10;
+  var svgW = LEFT + procNames.length*NW + (procNames.length-1)*CGAP + PAD;
 
-  // 大分類でグループ化
+  // 大分類グループ化
   var catMap={}, catOrder=[];
-  targetParts.forEach(function(part){
-    if(!catMap[part.categoryId]){catMap[part.categoryId]=[];catOrder.push(part.categoryId);}
-    catMap[part.categoryId].push(part);
+  targetParts.forEach(function(p){
+    if(!catMap[p.categoryId]){catMap[p.categoryId]=[];catOrder.push(p.categoryId);}
+    catMap[p.categoryId].push(p);
   });
 
-  // 各部品の行高さ
-  function partRowH(part){
-    var maxRows=1;
-    procNames.forEach(function(proc,ci){
-      var cell=getCell(part.id,ci);
-      var cnt=cell&&cell.suppliers?cell.suppliers.length:0;
-      if(cnt>maxRows)maxRows=cnt;
+  // 部品行高さ
+  function rowH(part){
+    var max=1;
+    procNames.forEach(function(_,ci){
+      var c=getCell(part.id,ci);
+      var n=c&&c.suppliers?c.suppliers.length:0;
+      if(n>max)max=n;
     });
-    return maxRows*(NH+NGAP)-NGAP;
+    return max*(NH+NGAP)-NGAP;
   }
 
-  // 中分類でサブグループ化
-  function groupBySubCat(parts2){
-    var map={},order=[];
-    parts2.forEach(function(p){
+  // 中分類グループ化
+  function scGroup(parts){
+    var m={},o=[];
+    parts.forEach(function(p){
       var k=p.subCategoryId||'__none__';
-      if(!map[k]){map[k]=[];order.push(k);}
-      map[k].push(p);
+      if(!m[k]){m[k]=[];o.push(k);}
+      m[k].push(p);
     });
-    return {map:map,order:order};
+    return {m:m,o:o};
   }
-
-  // LEFT = PAD + CAT_W + 8 + SC_W + 8 + LW + 8
-  var LEFT = PAD+CAT_W+8+SC_W+8+LW+8;
-  var svgW = LEFT+procNames.length*NW+(procNames.length-1)*CGAP+PAD;
 
   // 総高さ計算
-  var totalH=PAD+28;
+  var totalH=PAD+26;
   catOrder.forEach(function(catId){
-    totalH+=HDRH+10;
-    var sg=groupBySubCat(catMap[catId]);
-    sg.order.forEach(function(scId){
-      if(scId!=='__none__')totalH+=18;
-      sg.map[scId].forEach(function(p){totalH+=partRowH(p)+ROW_GAP;});
-      totalH+=6;
+    totalH+=HDRH+8;
+    var sg=scGroup(catMap[catId]);
+    sg.o.forEach(function(scId){
+      var sc=scId!=='__none__'?(subCategories||[]).find(function(s){return s.id===scId;}):null;
+      if(sc) totalH+=20;
+      sg.m[scId].forEach(function(p){totalH+=rowH(p)+ROW_GAP;});
+      totalH+=4;
     });
-    totalH+=8;
+    totalH+=10;
   });
 
   var out=[];
-  out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+svgW+' '+totalH+'" preserveAspectRatio="xMinYMin meet" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+svgW+' '+totalH+'" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
   out.push('<rect width="'+svgW+'" height="'+totalH+'" fill="#fff"/>');
   out.push('<defs>'+
-    '<marker id="ga" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#16a34a"/></marker>'+
-    '<marker id="gb" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#6366f1"/></marker>'+
-    '<marker id="gy" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#f59e0b"/></marker>'+
+    '<marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#16a34a"/></marker>'+
+    '<marker id="arr-blue" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/></marker>'+
+    '<marker id="arr-yellow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#f59e0b"/></marker>'+
     '</defs>');
-  out.push('<text x="'+PAD+'" y="'+(PAD+18)+'" font-size="18" font-weight="bold" fill="#1e293b">'+(themeName||'').replace(/&/g,'&amp;')+'</text>');
+  out.push('<text x="'+PAD+'" y="'+(PAD+16)+'" font-size="16" font-weight="bold" fill="#1e293b">'+(themeName||'').replace(/&/g,'&amp;')+'</text>');
 
-  var curY=PAD+28;
+  var curY=PAD+26;
   var partYMap={};
 
   catOrder.forEach(function(catId){
     var cat=categories.find(function(c){return c.id===catId;});
-    var catParts=catMap[catId];
     var catColor=(cat&&cat.color)?cat.color:'#334155';
     var catName=cat?cat.name:'';
+    var catParts=catMap[catId];
 
-    // 工程ヘッダー
+    // 工程ヘッダー行
     procNames.forEach(function(proc,ci){
       var hx=LEFT+ci*(NW+CGAP);
-      out.push('<rect x="'+hx+'" y="'+curY+'" width="'+NW+'" height="'+HDRH+'" rx="8" fill="#1e293b"/>');
-      out.push('<text x="'+(hx+NW/2)+'" y="'+(curY+HDRH/2+FS_PROC*0.35)+'" text-anchor="middle" font-size="'+FS_PROC+'" font-weight="bold" fill="#fff">'+proc.replace(/&/g,'&amp;')+'</text>');
+      out.push('<rect x="'+hx+'" y="'+curY+'" width="'+NW+'" height="'+HDRH+'" rx="6" fill="#1e293b"/>');
+      out.push('<text x="'+(hx+NW/2)+'" y="'+(curY+HDRH/2+6)+'" text-anchor="middle" font-size="15" font-weight="bold" fill="#fff">'+proc.replace(/&/g,'&amp;')+'</text>');
       if(ci<procNames.length-1){
-        var lx1=hx+NW+8,lx2=hx+NW+CGAP-8,ly=curY+HDRH/2;
-        out.push('<line x1="'+lx1+'" y1="'+ly+'" x2="'+lx2+'" y2="'+ly+'" stroke="#64748b" stroke-width="2"/>');
-        out.push('<polygon points="'+lx2+','+(ly-4)+' '+(lx2+8)+','+ly+' '+lx2+','+(ly+4)+'" fill="#64748b"/>');
+        var ax=hx+NW+6, ax2=hx+NW+CGAP-8, ay=curY+HDRH/2;
+        out.push('<line x1="'+ax+'" y1="'+ay+'" x2="'+ax2+'" y2="'+ay+'" stroke="#64748b" stroke-width="1.5"/>');
+        out.push('<polygon points="'+ax2+','+(ay-3)+' '+(ax2+6)+','+ay+' '+ax2+','+(ay+3)+'" fill="#64748b"/>');
       }
     });
-    curY+=HDRH+10;
+    curY+=HDRH+8;
 
-    // 大分類ブロック高さ計算
-    var sg=groupBySubCat(catParts);
-    var catBlockH=0;
-    sg.order.forEach(function(scId){
-      if(scId!=='__none__')catBlockH+=18;
-      sg.map[scId].forEach(function(p){catBlockH+=partRowH(p)+ROW_GAP;});
-      catBlockH+=6;
-    });
-
-    // 大分類ボックス
-    out.push('<rect x="'+PAD+'" y="'+curY+'" width="'+CAT_W+'" height="'+catBlockH+'" rx="6" fill="'+catColor+'22" stroke="'+catColor+'" stroke-width="2.5"/>');
-    var chars=catName.split('');
-    var charH=FS_CAT+4;
-    var startY=curY+catBlockH/2-(chars.length*charH)/2+FS_CAT;
-    chars.forEach(function(ch,ci2){
-      out.push('<text x="'+(PAD+CAT_W/2)+'" y="'+(startY+ci2*charH)+'" text-anchor="middle" font-size="'+FS_CAT+'" font-weight="bold" fill="'+catColor+'">'+ch.replace(/&/g,'&amp;')+'</text>');
-    });
-
-    var scBlockY=curY;
-    sg.order.forEach(function(scId){
+    // 大分類ブロック全体の高さを先に計算
+    var catH=0;
+    var sg=scGroup(catParts);
+    sg.o.forEach(function(scId){
       var sc=scId!=='__none__'?(subCategories||[]).find(function(s){return s.id===scId;}):null;
+      if(sc) catH+=20;
+      sg.m[scId].forEach(function(p){catH+=rowH(p)+ROW_GAP;});
+      catH+=4;
+    });
+
+    // 大分類縦ボックス
+    out.push('<rect x="'+PAD+'" y="'+curY+'" width="'+CAT_W+'" height="'+catH+'" rx="5" fill="'+catColor+'18" stroke="'+catColor+'" stroke-width="2"/>');
+    var chars=catName.split('');
+    var ch=14, startY=curY+catH/2-(chars.length*ch)/2+11;
+    chars.forEach(function(c2,i){
+      out.push('<text x="'+(PAD+CAT_W/2)+'" y="'+(startY+i*ch)+'" text-anchor="middle" font-size="12" font-weight="bold" fill="'+catColor+'">'+c2.replace(/&/g,'&amp;')+'</text>');
+    });
+
+    var catStartY=curY;
+
+    sg.o.forEach(function(scId){
+      var sc=scId!=='__none__'?(subCategories||[]).find(function(s){return s.id===scId;}):null;
+      var scStartY=curY;
 
       // 中分類ブロック高さ
-      var scBlockH=0;
-      sg.map[scId].forEach(function(p){scBlockH+=partRowH(p)+ROW_GAP;});
-      scBlockH-=ROW_GAP;
-      if(sc){scBlockH+=18+ROW_GAP;}
+      var scH=0;
+      sg.m[scId].forEach(function(p){scH+=rowH(p)+ROW_GAP;});
+      scH-=ROW_GAP;
 
-      // 中分類ボックス（枠線）
       if(sc){
-        var scX=PAD+CAT_W+8;
-        out.push('<rect x="'+scX+'" y="'+curY+'" width="'+(svgW-PAD-scX)+'" height="'+(scBlockH+6)+'" rx="6" fill="none" stroke="'+catColor+'55" stroke-width="1.5" stroke-dasharray="4,3"/>');
-        out.push('<rect x="'+(scX+4)+'" y="'+(curY-8)+'" width="'+(sc.name.length*FS_SC*0.65+12)+'" height="16" rx="4" fill="'+catColor+'"/>');
-        out.push('<text x="'+(scX+10)+'" y="'+(curY+2)+'" font-size="'+FS_SC+'" font-weight="bold" fill="#fff">'+sc.name.replace(/&/g,'&amp;')+'</text>');
-        curY+=18;
+        // 中分類ラベル
+        var lx=PAD+CAT_W+6;
+        out.push('<rect x="'+lx+'" y="'+curY+'" width="80" height="16" rx="4" fill="'+catColor+'"/>');
+        out.push('<text x="'+(lx+6)+'" y="'+(curY+11)+'" font-size="10" font-weight="bold" fill="#fff">'+sc.name.replace(/&/g,'&amp;')+'</text>');
+        curY+=20;
+        // 中分類枠
+        out.push('<rect x="'+lx+'" y="'+(scStartY+16)+'" width="'+(svgW-PAD-lx)+'" height="'+(scH+4)+'" rx="6" fill="none" stroke="'+catColor+'44" stroke-width="1.5" stroke-dasharray="5,3"/>');
       }
 
-      sg.map[scId].forEach(function(part){
-        var rh=partRowH(part);
+      sg.m[scId].forEach(function(part){
+        var rh=rowH(part);
         partYMap[part.id]={};
 
         // 部品ラベル
-        var labelX=PAD+CAT_W+8+SC_W+8;
-        out.push('<rect x="'+labelX+'" y="'+curY+'" width="'+LW+'" height="'+rh+'" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>');
-        out.push('<text x="'+(labelX+LW/2)+'" y="'+(curY+rh/2+FS_PART*0.35)+'" text-anchor="middle" font-size="'+FS_PART+'" font-weight="bold" fill="#334155">'+(part.name||'').replace(/&/g,'&amp;')+'</text>');
+        var lbX=PAD+CAT_W+10;
+        out.push('<rect x="'+lbX+'" y="'+curY+'" width="'+LW+'" height="'+rh+'" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>');
+        out.push('<text x="'+(lbX+LW/2)+'" y="'+(curY+rh/2+5)+'" text-anchor="middle" font-size="14" font-weight="bold" fill="#334155">'+(part.name||'').replace(/&/g,'&amp;')+'</text>');
 
-        // 各工程
         procNames.forEach(function(proc,ci){
           var cell=getCell(part.id,ci);
-          var suppliers=cell&&cell.suppliers?cell.suppliers:[];
-          var selected=cell?cell.selected:null;
-          var candidates=cell&&cell.candidates?cell.candidates:[];
-          var scores=suppliers.map(function(s){return scoreSupplier(s,suppliers);});
-          var maxScore=scores.length?Math.max.apply(null,scores):0;
-          var winnerId=maxScore>0?(suppliers[scores.indexOf(maxScore)]||{}).id:null;
+          var sups=cell&&cell.suppliers?cell.suppliers:[];
+          var sel=cell?cell.selected:null;
+          var cands=cell&&cell.candidates?cell.candidates:[];
           var cx=LEFT+ci*(NW+CGAP);
-          var selY=null,winY=null;
+          var selY=null, winY=null;
 
-          // 空セルはグレー塗り
-          if(suppliers.length===0){
-            out.push('<rect x="'+cx+'" y="'+curY+'" width="'+NW+'" height="'+rh+'" rx="8" fill="#f1f5f9" stroke="#e2e8f0" stroke-width="1"/>');
-            out.push('<text x="'+(cx+NW/2)+'" y="'+(curY+rh/2+5)+'" text-anchor="middle" font-size="13" fill="#cbd5e1">—</text>');
+          if(sups.length===0){
+            // 空セル: グレー
+            out.push('<rect x="'+cx+'" y="'+curY+'" width="'+NW+'" height="'+rh+'" rx="6" fill="#f0f0f0" stroke="#d0d0d0" stroke-width="1"/>');
+            out.push('<text x="'+(cx+NW/2)+'" y="'+(curY+rh/2+5)+'" text-anchor="middle" font-size="12" fill="#aaa">—</text>');
           } else {
-            suppliers.forEach(function(s,si){
+            var scores=sups.map(function(s){return scoreSupplier(s,sups);});
+            var maxSc=scores.length?Math.max.apply(null,scores):0;
+            var winnerId=maxSc>0?(sups[scores.indexOf(maxSc)]||{}).id:null;
+
+            sups.forEach(function(s,si){
               var ny=curY+si*(NH+NGAP);
-              var isSel=s.id===selected;
-              var isCand=candidates.indexOf(s.id)>=0;
+              var isSel=s.id===sel;
+              var isCand=cands.indexOf(s.id)>=0;
               var isWin=s.id===winnerId&&!isSel;
               var bg=isSel?'#dbeafe':isCand?'#e0f2fe':'#f8fafc';
-              var strokeC=isSel?'#2563eb':isCand?'#93c5fd':'#e2e8f0';
-              out.push('<rect x="'+cx+'" y="'+ny+'" width="'+NW+'" height="'+NH+'" rx="8" fill="'+bg+'" stroke="'+strokeC+'" stroke-width="'+(isSel?3:1.5)+'"/>');
+              var stk=isSel?'#2563eb':isCand?'#93c5fd':'#e2e8f0';
+              out.push('<rect x="'+cx+'" y="'+ny+'" width="'+NW+'" height="'+NH+'" rx="7" fill="'+bg+'" stroke="'+stk+'" stroke-width="'+(isSel?2.5:1.5)+'"/>');
               if(isSel){
-                out.push('<rect x="'+(cx+5)+'" y="'+(ny-9)+'" width="48" height="16" rx="8" fill="#2563eb"/>');
-                out.push('<text x="'+(cx+29)+'" y="'+(ny+3)+'" text-anchor="middle" font-size="'+FS_BADGE+'" font-weight="bold" fill="#fff">&#x2713;採用</text>');
+                out.push('<rect x="'+(cx+5)+'" y="'+(ny-8)+'" width="44" height="14" rx="7" fill="#2563eb"/>');
+                out.push('<text x="'+(cx+27)+'" y="'+(ny+2)+'" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">&#x2713;採用</text>');
                 selY=ny+NH/2;
               } else if(isWin){
-                out.push('<rect x="'+(cx+5)+'" y="'+(ny-9)+'" width="36" height="16" rx="8" fill="#f59e0b"/>');
-                out.push('<text x="'+(cx+23)+'" y="'+(ny+3)+'" text-anchor="middle" font-size="'+FS_BADGE+'" fill="#fff">検討</text>');
+                out.push('<rect x="'+(cx+5)+'" y="'+(ny-8)+'" width="32" height="14" rx="7" fill="#f59e0b"/>');
+                out.push('<text x="'+(cx+21)+'" y="'+(ny+2)+'" text-anchor="middle" font-size="9" fill="#fff">検討</text>');
                 winY=ny+NH/2;
               } else if(isCand){
-                out.push('<rect x="'+(cx+5)+'" y="'+(ny-9)+'" width="36" height="16" rx="8" fill="#475569"/>');
-                out.push('<text x="'+(cx+23)+'" y="'+(ny+3)+'" text-anchor="middle" font-size="'+FS_BADGE+'" fill="#cbd5e1">候補</text>');
+                out.push('<rect x="'+(cx+5)+'" y="'+(ny-8)+'" width="32" height="14" rx="7" fill="#475569"/>');
+                out.push('<text x="'+(cx+21)+'" y="'+(ny+2)+'" text-anchor="middle" font-size="9" fill="#cbd5e1">候補</text>');
               }
-              var name=(s.name||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-              out.push('<text x="'+(cx+10)+'" y="'+(ny+28)+'" font-size="'+FS_NAME+'" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e40af':'#1e293b')+'">'+name+'</text>');
-              if(s.cost)out.push('<text x="'+(cx+10)+'" y="'+(ny+50)+'" font-size="'+FS_INFO+'" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
-              if(s.leadTime)out.push('<text x="'+(cx+10)+'" y="'+(ny+68)+'" font-size="'+FS_INFO+'" fill="#64748b">LT:'+s.leadTime+'日</text>');
-              var score=scores[si]||0;
-              var sc2=score>=70?'#22c55e':score>=40?'#f59e0b':'#ef4444';
-              out.push('<rect x="'+(cx+10)+'" y="'+(ny+NH-16)+'" width="'+(NW-20)+'" height="6" rx="3" fill="#e2e8f0"/>');
-              out.push('<rect x="'+(cx+10)+'" y="'+(ny+NH-16)+'" width="'+Math.round((NW-20)*score/100)+'" height="6" rx="3" fill="'+sc2+'"/>');
+              var nm=(s.name||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+              out.push('<text x="'+(cx+8)+'" y="'+(ny+22)+'" font-size="15" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e40af':'#374151')+'">'+nm+'</text>');
+              if(s.cost) out.push('<text x="'+(cx+8)+'" y="'+(ny+42)+'" font-size="13" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
+              if(s.leadTime) out.push('<text x="'+(cx+8)+'" y="'+(ny+58)+'" font-size="13" fill="#64748b">LT:'+s.leadTime+'&#26085;</text>');
+              var sc2=scores[si]>=70?'#22c55e':scores[si]>=40?'#f59e0b':'#ef4444';
+              out.push('<rect x="'+(cx+8)+'" y="'+(ny+NH-14)+'" width="'+(NW-16)+'" height="5" rx="2" fill="#e2e8f0"/>');
+              out.push('<rect x="'+(cx+8)+'" y="'+(ny+NH-14)+'" width="'+Math.round((NW-16)*scores[si]/100)+'" height="5" rx="2" fill="'+sc2+'"/>');
             });
           }
 
-          // 採用矢印（緑）
-          if(ci>0&&partYMap[part.id][ci-1]&&partYMap[part.id][ci-1].selY!==null&&selY!==null){
-            var px=LEFT+(ci-1)*(NW+CGAP)+NW;
-            out.push('<line x1="'+px+'" y1="'+partYMap[part.id][ci-1].selY+'" x2="'+(cx-6)+'" y2="'+selY+'" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ga)"/>');
-          }
-          // 検討矢印（黄色点線）
-          if(ci>0&&partYMap[part.id][ci-1]&&partYMap[part.id][ci-1].winY!==null&&winY!==null){
-            var px=LEFT+(ci-1)*(NW+CGAP)+NW;
-            out.push('<line x1="'+px+'" y1="'+partYMap[part.id][ci-1].winY+'" x2="'+(cx-6)+'" y2="'+winY+'" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#gy)" opacity="0.8"/>');
+          // 採用線（前工程→現工程）
+          if(ci>0){
+            var prev=partYMap[part.id][ci-1];
+            if(prev&&prev.selY!==null&&selY!==null){
+              var x1=LEFT+(ci-1)*(NW+CGAP)+NW, x2=cx-4;
+              out.push('<line x1="'+x1+'" y1="'+prev.selY+'" x2="'+x2+'" y2="'+selY+'" stroke="#16a34a" stroke-width="2.5" marker-end="url(#arr-green)"/>');
+            }
+            if(prev&&prev.winY!==null&&winY!==null){
+              var x1=LEFT+(ci-1)*(NW+CGAP)+NW, x2=cx-4;
+              out.push('<line x1="'+x1+'" y1="'+prev.winY+'" x2="'+x2+'" y2="'+winY+'" stroke="#f59e0b" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arr-yellow)" opacity="0.85"/>');
+            }
           }
 
           partYMap[part.id][ci]={selY:selY,winY:winY,x:cx};
@@ -438,20 +439,19 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
 
         curY+=rh+ROW_GAP;
       });
-      curY+=6;
+      curY+=4;
     });
-    curY+=8;
+    curY+=10;
   });
 
   // 部品間合流線（青）
   if(crossLinks&&crossLinks.length){
     crossLinks.forEach(function(link){
-      var from=partYMap[link.fromPartId]&&partYMap[link.fromPartId][link.fromProcIdx];
-      var to=partYMap[link.toPartId]&&partYMap[link.toPartId][link.toProcIdx];
-      if(!from||!to)return;
-      var x1=from.x+NW,y1=from.selY,x2=to.x,y2=to.selY;
-      if(y1===null||y1===undefined||y2===null||y2===undefined)return;
-      out.push('<path d="M'+x1+','+y1+' C'+(x1+80)+','+y1+' '+(x2-80)+','+y2+' '+x2+','+y2+'" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#gb)" opacity="0.9"/>');
+      var f=partYMap[link.fromPartId]&&partYMap[link.fromPartId][link.fromProcIdx];
+      var t=partYMap[link.toPartId]&&partYMap[link.toPartId][link.toProcIdx];
+      if(!f||!t||f.selY===null||t.selY===null) return;
+      var x1=f.x+NW,y1=f.selY,x2=t.x,y2=t.selY;
+      out.push('<path d="M'+x1+','+y1+' C'+(x1+70)+','+y1+' '+(x2-70)+','+y2+' '+x2+','+y2+'" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="7,3" marker-end="url(#arr-blue)" opacity="0.9"/>');
     });
   }
 
