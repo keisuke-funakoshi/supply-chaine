@@ -670,6 +670,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, subCategories,
           {categories.map((cat, i) => {
             const partCount = parts.filter(p => p.categoryId === cat.id).length;
             return (
+              <div key={cat.id + "_wrap"}>
               <div
                 key={cat.id}
                 draggable
@@ -698,11 +699,11 @@ function ThemePanel({ theme, setTheme, categories, setCategories, subCategories,
                   <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
                     <span style={{ width: 5, height: 5, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
                     <input value={sc.name}
-                      onChange={e => setSubCategories(subCategories.map(s => s.id === sc.id ? { ...s, name: e.target.value } : s))}
+                      onChange={e => setSubCategories(subCategories.map(function(s){ return s.id===sc.id ? Object.assign({},s,{name:e.target.value}) : s; }))}
                       style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }} />
                     <button onClick={() => showConfirm("「" + sc.name + "」を削除しますか？", () => {
                         setSubCategories(subCategories.filter(s => s.id !== sc.id));
-                        setParts(parts.map(p => p.subCategoryId === sc.id ? { ...p, subCategoryId: null } : p));
+                        setParts(parts.map(function(p){ return p.subCategoryId===sc.id ? Object.assign({},p,{subCategoryId:null}) : p; }));
                       })}
                       style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
                   </div>
@@ -710,11 +711,12 @@ function ThemePanel({ theme, setTheme, categories, setCategories, subCategories,
                 <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
                   <input id={"new-subcat-" + cat.id} placeholder="中分類名を入力"
                     style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }}
-                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); var v = e.target.value.trim(); if (v) { setSubCategories([...subCategories, { id: newId(), categoryId: cat.id, name: v }]); e.target.value = ""; } }}} />
-                  <button onClick={() => { var inp = document.getElementById("new-subcat-" + cat.id); if (inp && inp.value.trim()) { setSubCategories([...subCategories, { id: newId(), categoryId: cat.id, name: inp.value.trim() }]); inp.value = ""; }}}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); var v = e.target.value.trim(); if (v) { setSubCategories(subCategories.concat([{ id: newId(), categoryId: cat.id, name: v }])); e.target.value = ""; } }}} />
+                  <button onClick={() => { var inp = document.getElementById("new-subcat-" + cat.id); if (inp && inp.value.trim()) { setSubCategories(subCategories.concat([{ id: newId(), categoryId: cat.id, name: inp.value.trim() }])); inp.value = ""; }}}
                     style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", padding: "3px 10px", fontSize: 11, cursor: "pointer" }}>＋</button>
                 </div>
               </div>
+              </div>{/* end wrap */}
             );
           })}
         </div>
@@ -1161,7 +1163,9 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
             {/* 部品ラベル */}
             <div style={{ width: FLABEL_W, flexShrink: 0, background: "#0f172a", border: "1px solid " + (cat ? cat.color + "44" : "#1e293b"), borderRadius: 10, padding: "10px 10px", boxSizing: "border-box" }}>
               {cat && <div style={{ fontSize: 9, color: cat.color, fontWeight: 700, marginBottom: 1 }}>{cat.name}</div>}
-              {(function(){ var sc = subCategories.find(function(s){ return s.id === part.subCategoryId; }); return sc ? <div style={{ fontSize: 9, color: "#64748b", marginBottom: 3 }}>{sc.name}</div> : null; })()}
+              {subCategories.find(function(s){ return s.id === part.subCategoryId; }) ? 
+                <div style={{ fontSize: 9, color: "#64748b", marginBottom: 3 }}>{(subCategories.find(function(s){ return s.id === part.subCategoryId; }) || {}).name}</div> 
+                : null}
               {/* 部品名（インライン編集） */}
               <input value={part.name}
                 onChange={function(e) {
