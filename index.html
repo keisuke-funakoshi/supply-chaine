@@ -1064,6 +1064,11 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
           console.log('getElPos result:', part.id, fromCi, '->', toCi, 'fr:', !!fr, 'tr:', !!tr);
         }
         if (!fr || !tr) continue;
+        if (typeof console !== 'undefined') {
+          console.log('Arrow coords:', part.id, fromCi, '->', toCi,
+            'x1:', Math.round(fr.right), 'y1:', Math.round(fr.top+fr.height/2),
+            'x2:', Math.round(tr.left), 'y2:', Math.round(tr.top+tr.height/2));
+        }
         arrows.push({ id: part.id+"_arr_"+fromCi+"_"+toCi,
           x1: fr.right, y1: fr.top+fr.height/2, x2: tr.left, y2: tr.top+tr.height/2,
           skip: (toCi - fromCi) > 1 });
@@ -1171,7 +1176,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
       )}
 
       {/* SVGオーバーレイ：採用線 + 検討点線 + 候補点線 + 合流線 */}
-      {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0) && (
+      {(function() { if(typeof console!=='undefined') console.log('SVG cond: arrows=',arrowLines.length,'cands=',candLines.length,'svgLines=',svgLines.length); return true; })() && (svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0) && (
         <svg style={{ position: "absolute", top: 0, left: 0, width: "10000px", height: "10000px", pointerEvents: "none", zIndex: 10, overflow: "visible" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
