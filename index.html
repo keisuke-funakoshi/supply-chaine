@@ -1002,7 +1002,6 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
 
   // data属性でDOM要素を検索してBoundingRectを取得
   function getElPos(cont, partId, ci, role) {
-    // nodeRefs ベースで要素を取得
     var key = partId + "_" + ci;
     var sel;
     if (role === "adopted") {
@@ -1018,6 +1017,8 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
          || nodeRefs.current[key];
     }
     if (!sel) return null;
+    // 要素がビューポート外かチェック（非表示の場合は無効）
+
     var eRect = sel.getBoundingClientRect();
     var cRect = cont.getBoundingClientRect();
     var sl = cont.scrollLeft || 0;
@@ -1052,10 +1053,16 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
         var cell = getCell(part.id, ci);
         if (cell && cell.selected) adoptedCols.push(ci);
       });
+      if (typeof console !== 'undefined' && adoptedCols.length > 1) {
+        console.log('Arrow candidates:', part.id, adoptedCols);
+      }
       for (var i = 0; i < adoptedCols.length - 1; i++) {
         var fromCi = adoptedCols[i], toCi = adoptedCols[i+1];
         var fr = getElPos(cont, part.id, fromCi, "adopted");
         var tr = getElPos(cont, part.id, toCi, "adopted");
+        if (typeof console !== 'undefined') {
+          console.log('getElPos result:', part.id, fromCi, '->', toCi, 'fr:', !!fr, 'tr:', !!tr);
+        }
         if (!fr || !tr) continue;
         arrows.push({ id: part.id+"_arr_"+fromCi+"_"+toCi,
           x1: fr.right, y1: fr.top+fr.height/2, x2: tr.left, y2: tr.top+tr.height/2,
@@ -1064,41 +1071,36 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
     });
     setArrowLines(arrows);
 
-    // 候補線: 工程ヘッダー間を括る太い白線
+    // 候補線: 各部品のサプライヤー塊の間（採用なし工程の隣接工程間）に白線
     var wLines = [], cLines = [];
-    var candProcPairs = {};
     displayParts.forEach(function(part) {
       var candCols = [];
       processes.forEach(function(proc, ci) {
         var cell = getCell(part.id, ci);
         if (!cell || !cell.suppliers || cell.suppliers.length === 0) return;
-        if (!cell.selected && cell.suppliers.length > 0) {
-          candCols.push(ci);
-        }
+        if (!cell.selected) candCols.push(ci);
       });
       for (var i = 0; i < candCols.length - 1; i++) {
-        var key = candCols[i] + "_" + candCols[i+1];
-        candProcPairs[key] = true;
+        var ci1 = candCols[i], ci2 = candCols[i + 1];
+        // 隣接工程のみ
+        if (ci2 - ci1 !== 1) continue;
+        var el1 = nodeRefs.current[part.id + "_" + ci1];
+        var el2 = nodeRefs.current[part.id + "_" + ci2];
+        if (!el1 || !el2) continue;
+        var r1 = el1.getBoundingClientRect();
+        var r2 = el2.getBoundingClientRect();
+        var cRect = cont.getBoundingClientRect();
+        var sl = cont.scrollLeft || 0;
+        var midY = (r1.top + r1.bottom) / 2 - cRect.top;
+        cLines.push({
+          id: "cand_" + part.id + "_" + ci1 + "_" + ci2,
+          x1: r1.right - cRect.left + sl,
+          y1: midY,
+          x2: r2.left - cRect.left + sl,
+          y2: midY,
+          isProc: true
+        });
       }
-    });
-    Object.keys(candProcPairs).forEach(function(key) {
-      var parts2 = key.split("_");
-      var ci1 = parseInt(parts2[0]), ci2 = parseInt(parts2[1]);
-      var el1 = nodeRefs.current["__proc_" + ci1];
-      var el2 = nodeRefs.current["__proc_" + ci2];
-      if (!el1 || !el2) return;
-      var r1 = el1.getBoundingClientRect();
-      var r2 = el2.getBoundingClientRect();
-      var cRect = cont.getBoundingClientRect();
-      var sl = cont.scrollLeft || 0;
-      cLines.push({
-        id: "cand_proc_" + key,
-        x1: r1.right - cRect.left + sl,
-        y1: r1.top - cRect.top + r1.height / 2,
-        x2: r2.left - cRect.left + sl,
-        y2: r2.top - cRect.top + r2.height / 2,
-        isProc: true
-      });
     });
     setWinLines(wLines);
     setCandLines(cLines);
