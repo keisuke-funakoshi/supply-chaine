@@ -883,6 +883,17 @@ const FNODE_W = 180, FNODE_GAP = 40, FLABEL_W = 148;
 
 function FlowView({ partIds, parts, setParts, removePart, categories, subCategories, processes, getCell, setCell, targetCostMap, setTargetCostMap, onOpenModal, themeId, showConfirm }) {
   var displayParts = partIds === "__all__" ? parts : parts.filter(function(p) { return partIds.indexOf(p.id) >= 0; });
+
+  // 大分類でグループ化
+  var groups = {};
+  var groupOrder = [];
+  displayParts.forEach(function(part) {
+    if (!groups[part.categoryId]) {
+      groups[part.categoryId] = [];
+      groupOrder.push(part.categoryId);
+    }
+    groups[part.categoryId].push(part);
+  });
   var [crossLinks, setCrossLinksRaw] = useState(function() {
     var all = loadCrossLinks(); return all[themeId] || [];
   });
@@ -1139,30 +1150,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
       {/* 部品行 */}
       
       {/* 大分類グループ表示 */}
-      {(function() {
-        // 大分類でグループ化
-        var catGroups = [];
-        var seenCats = {};
-        displayParts.forEach(function(part) {
-          var catId = part.categoryId;
-          if (!seenCats[catId]) {
-            seenCats[catId] = true;
-            catGroups.push({ catId: catId, parts: [] });
-          }
-          catGroups[catGroups.length - 1 < 0 ? 0 : catGroups.findIndex(function(g){ return g.catId === catId; })].parts.push(part);
-        });
-        // 正しくグループ化
-        var groups = {};
-        var groupOrder = [];
-        displayParts.forEach(function(part) {
-          if (!groups[part.categoryId]) {
-            groups[part.categoryId] = [];
-            groupOrder.push(part.categoryId);
-          }
-          groups[part.categoryId].push(part);
-        });
-
-        return groupOrder.map(function(catId) {
+      {groupOrder.map(function(catId) {
           var groupParts = groups[catId];
           var cat = categories.find(function(c){ return c.id === catId; });
 
@@ -1324,8 +1312,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
               </div>
             </div>
           );
-        });
-      })()}
+      })}
       </div>
     </div>
   );
@@ -1335,7 +1322,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
 const THEMES_KEY = "shoury_themes_v1";
 const ACTIVE_KEY = "shoury_active_v1";
 
-function makeBlankThemeData(name = "新規開発テーマ") {
+function makeBlankThemeData(name) { if (name === undefined) name = "新規開発テーマ";
   const tid = newId();
   return {
     theme: { id: tid, name },
