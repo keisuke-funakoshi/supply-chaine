@@ -903,6 +903,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   });
   var [linkDialog, setLinkDialog] = useState(null);
   var containerRef = useRef(null);
+  var nodeRefs = useRef({});
   var [svgLines, setSvgLines] = useState([]);
   var [arrowLines, setArrowLines] = useState([]);
   var [winLines, setWinLines] = useState([]);
