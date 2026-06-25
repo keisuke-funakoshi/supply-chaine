@@ -1029,6 +1029,11 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   function recalcLines() {
     if (!containerRef.current) return;
     var cont = containerRef.current;
+    // デバッグ: nodeRefs の内容を確認
+    var refKeys = Object.keys(nodeRefs.current);
+    if (typeof console !== 'undefined' && refKeys.length > 0) {
+      console.log('nodeRefs keys:', refKeys.slice(0, 10).join(', '), '... total:', refKeys.length);
+    }
 
     // 部品間合流線（採用優先、なければ検討、なければ候補、なければ先頭）
     var lines = crossLinks.map(function(link) {
@@ -1100,7 +1105,9 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   }
 
   useEffect(function() {
-    recalcLines();
+    // DOMが確実に更新された後に実行
+    var t = setTimeout(recalcLines, 50);
+    return function() { clearTimeout(t); };
   }, [crossLinks, displayParts.length, processes.length,
       displayParts.map(function(p) {
         return processes.map(function(proc, ci) {
