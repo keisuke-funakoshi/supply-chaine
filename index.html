@@ -1966,24 +1966,26 @@ function App() {
                 })}
               </div>
               {/* 選択中の大分類内の中分類・部品タブ（2段目） */}
-              {flowPartId && flowPartId !== "__all__" && (() => {
-                const activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
-                  : parts.find(p => p.id === flowPartId)?.categoryId;
-                const activeCat = categories.find(c => c.id === activeCatId);
-                const catParts = parts.filter(p => p.categoryId === activeCatId);
+              {(function() {
+                if (!flowPartId || flowPartId === "__all__") return null;
+                var activeCatId = flowPartId.startsWith("cat:") ? flowPartId.slice(4)
+                  : (parts.find(function(p){ return p.id === flowPartId; }) || {}).categoryId;
+                var activeCat = categories.find(function(c){ return c.id === activeCatId; });
+                var catParts = parts.filter(function(p){ return p.categoryId === activeCatId; });
                 if (!catParts.length || !activeCat) return null;
                 return (
                   <div style={{ display: "flex", gap: 0, paddingLeft: 8, overflowX: "auto", borderTop: "1px solid #1e293b" }}>
-                    {catParts.map(part => {
+                    {catParts.map(function(part) {
                       var sc = subCategories.find(function(s){ return s.id === part.subCategoryId; });
+                      var isActive = flowPartId === part.id;
                       return (
-                      <button key={part.id} onClick={() => setFlowPartId(part.id)}
-                        style={{ background: "none", border: "none", borderBottom: `2px solid ${flowPartId === part.id ? activeCat.color : "transparent"}`, color: flowPartId === part.id ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: flowPartId === part.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
-                        {sc ? <span style={{ fontSize: 9, color: "#64748b", marginRight: 3 }}>{sc.name}/</span> : null}{part.name}
-                      </button>
+                        <button key={part.id} onClick={function(){ setFlowPartId(part.id); }}
+                          style={{ background: "none", border: "none", borderBottom: "2px solid " + (isActive ? activeCat.color : "transparent"), color: isActive ? activeCat.color : "#64748b", padding: "5px 12px", fontSize: 11, fontWeight: isActive ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1 }}>
+                          {sc ? <span style={{ fontSize: 9, color: "#64748b", marginRight: 3 }}>{sc.name}/</span> : null}{part.name}
+                        </button>
                       );
                     })}
-                    <button onClick={() => { setNewPartCatId(activeCatId); setNewPartName(""); document.querySelector('#new-part-input')?.focus(); }}
+                    <button onClick={function(){ setNewPartCatId(activeCatId); setNewPartName(""); var el = document.getElementById("new-part-input"); if(el) el.focus(); }}
                       style={{ background: "none", border: "none", color: "#334155", padding: "5px 8px", fontSize: 14, cursor: "pointer" }}>＋</button>
                   </div>
                 );
@@ -2031,19 +2033,19 @@ function App() {
             </div>
 
             {/* ── フロー図本体 ── */}
-            {(() => {
+            {(function() {
               var flowPartIds;
               if (!flowPartId || flowPartId === "__all__") {
                 flowPartIds = "__all__";
               } else if (flowPartId.indexOf("cat:") === 0) {
-                var catId = flowPartId.slice(4);
-                flowPartIds = parts.filter(function(p) { return p.categoryId === catId; }).map(function(p) { return p.id; });
+                var catId2 = flowPartId.slice(4);
+                flowPartIds = parts.filter(function(p) { return p.categoryId === catId2; }).map(function(p) { return p.id; });
               } else {
                 flowPartIds = [flowPartId];
               }
               return (
                 <div className="flow-container" style={{ background: "#080f1a", border: "1px solid #1e293b", borderRadius: 12, padding: 20, position: "relative" }}>
-                  <FlowView partIds={flowPartIds} parts={parts} categories={categories} subCategories={subCategories} processes={processes.map(p => p.name)} getCell={(pid, ci) => getCell(pid, ci)} setCell={(pid, ci, data) => setCell(pid, ci, data)} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={(partId, partName, ci) => setModal({ partId, partName, processIdx: ci })}
+                  <FlowView partIds={flowPartIds} parts={parts} categories={categories} subCategories={subCategories} processes={processes.map(function(p){ return p.name; })} getCell={function(pid, ci){ return getCell(pid, ci); }} setCell={function(pid, ci, data){ return setCell(pid, ci, data); }} targetCostMap={targetCostMap} setTargetCostMap={setTargetCostMap} onOpenModal={function(partId, partName, ci){ return setModal({ partId: partId, partName: partName, processIdx: ci }); }}
                   themeId={activeThemeId}
                   setParts={setParts}
                   removePart={removePart}
