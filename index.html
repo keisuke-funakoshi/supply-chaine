@@ -247,7 +247,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 // --- PDF出力（白背景・全部品/部品ごと） -----------------------------
 function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell, crossLinks) {
   var procNames = processes.map(function(p){return p.name;});
-  var NW=180, NH=68, NGAP=6, CGAP=44, LW=120, HDRH=32, PAD=14, ROW_GAP=20;
+  var NW=220, NH=90, NGAP=8, CGAP=50, LW=130, HDRH=36, PAD=16, ROW_GAP=24;
 
   // 各部品の行高さを計算
   var partHeights = targetParts.map(function(part) {
@@ -272,14 +272,14 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
     '</defs>');
 
   // タイトル
-  out.push('<text x="'+PAD+'" y="'+(PAD+12)+'" font-size="12" font-weight="bold" fill="#1e293b">'+themeName+'</text>');
+  out.push('<text x="'+PAD+'" y="'+(PAD+12)+'" font-size="14" font-weight="bold" fill="#1e293b">'+themeName+'</text>');
 
   // 工程ヘッダー
   var hdrY = PAD + 20;
   procNames.forEach(function(proc, ci) {
     var x = PAD+LW+ci*(NW+CGAP);
     out.push('<rect x="'+x+'" y="'+hdrY+'" width="'+NW+'" height="'+HDRH+'" rx="5" fill="#334155"/>');
-    out.push('<text x="'+(x+NW/2)+'" y="'+(hdrY+HDRH/2+4)+'" text-anchor="middle" font-size="10" font-weight="bold" fill="#fff">'+proc+'</text>');
+    out.push('<text x="'+(x+NW/2)+'" y="'+(hdrY+HDRH/2+4)+'" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">'+proc+'</text>');
     if (ci < procNames.length-1) {
       out.push('<line x1="'+(x+NW)+'" y1="'+(hdrY+HDRH/2)+'" x2="'+(x+NW+CGAP-6)+'" y2="'+(hdrY+HDRH/2)+'" stroke="#94a3b8" stroke-width="1"/>');
       out.push('<polygon points="'+(x+NW+CGAP-6)+','+(hdrY+HDRH/2-3)+' '+(x+NW+CGAP)+','+(hdrY+HDRH/2)+' '+(x+NW+CGAP-6)+','+(hdrY+HDRH/2+3)+'" fill="#94a3b8"/>');
@@ -312,8 +312,8 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
 
     // 部品ラベル
     out.push('<rect x="'+PAD+'" y="'+baseY+'" width="'+LW+'" height="'+rowH+'" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>');
-    if (cat) out.push('<text x="'+(PAD+4)+'" y="'+(baseY+12)+'" font-size="8" fill="'+cat.color+'">'+cat.name+'</text>');
-    out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+rowH/2+(cat?4:0))+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">'+part.name+'</text>');
+    if (cat) out.push('<text x="'+(PAD+4)+'" y="'+(baseY+12)+'" font-size="13" fill="'+cat.color+'">'+cat.name+'</text>');
+    out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+rowH/2+(cat?4:0))+'" text-anchor="middle" font-size="13" font-weight="bold" fill="#334155">'+part.name+'</text>');
 
     var colData = [];
     cols.forEach(function(col, ci) {
@@ -329,16 +329,16 @@ function buildAllPartsSVG(themeName, targetParts, categories, processes, getCell
         out.push('<rect x="'+x+'" y="'+ny+'" width="'+NW+'" height="'+NH+'" rx="6" fill="'+bg+'" stroke="'+strokeC+'" stroke-width="'+(isSel?2:1)+'"/>');
         if (isSel) {
           out.push('<rect x="'+(x+3)+'" y="'+(ny-6)+'" width="28" height="11" rx="5" fill="#2563eb"/>');
-          out.push('<text x="'+(x+17)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="6" font-weight="bold" fill="#fff">&#x2713;採用</text>');
+          out.push('<text x="'+(x+17)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">&#x2713;採用</text>');
           selY = ny+NH/2;
         } else if (s.id===winnerIds[ci]) {
           out.push('<rect x="'+(x+3)+'" y="'+(ny-6)+'" width="22" height="11" rx="5" fill="#f59e0b"/>');
-          out.push('<text x="'+(x+14)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="6" fill="#fff">検討</text>');
+          out.push('<text x="'+(x+14)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="9" fill="#fff">検討</text>');
           winY = ny+NH/2;
         }
-        out.push('<text x="'+(x+6)+'" y="'+(ny+15)+'" font-size="9" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'" >'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</text>');
-        if (s.cost) out.push('<text x="'+(x+6)+'" y="'+(ny+28)+'" font-size="8" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
-        if (s.leadTime) out.push('<text x="'+(x+6)+'" y="'+(ny+40)+'" font-size="8" fill="#64748b">LT:'+s.leadTime+'d</text>');
+        out.push('<text x="'+(x+6)+'" y="'+(ny+15)+'" font-size="13" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'" >'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</text>');
+        if (s.cost) out.push('<text x="'+(x+6)+'" y="'+(ny+28)+'" font-size="13" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
+        if (s.leadTime) out.push('<text x="'+(x+6)+'" y="'+(ny+40)+'" font-size="13" fill="#64748b">LT:'+s.leadTime+'d</text>');
       });
 
       // 工程間矢印（採用・緑）
@@ -391,8 +391,8 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
   out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+svgW+' '+svgH+'" preserveAspectRatio="xMinYMin meet" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
   out.push('<rect width="'+svgW+'" height="'+svgH+'" fill="#fff"/>');
   var titleY = PAD+14;
-  out.push('<text x="'+PAD+'" y="'+titleY+'" font-size="13" font-weight="bold" fill="#1e293b">'+(catName?catName+' / ':'')+partName+'</text>');
-  out.push('<text x="'+(svgW-PAD)+'" y="'+titleY+'" font-size="10" fill="#94a3b8" text-anchor="end">'+themeName+'</text>');
+  out.push('<text x="'+PAD+'" y="'+titleY+'" font-size="14" font-weight="bold" fill="#1e293b">'+(catName?catName+' / ':'')+partName+'</text>');
+  out.push('<text x="'+(svgW-PAD)+'" y="'+titleY+'" font-size="14" fill="#94a3b8" text-anchor="end">'+themeName+'</text>');
   var baseY = PAD+20;
   out.push('<rect x="'+PAD+'" y="'+(baseY+HDRH)+'" width="'+LW+'" height="'+(maxRows*(NH+NGAP))+'" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>');
   out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+HDRH+maxRows*(NH+NGAP)/2+5)+'" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">'+partName+'</text>');
@@ -411,7 +411,7 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
   cols.forEach(function(col, ci) {
     var x = PAD+LW+ci*(NW+CGAP);
     out.push('<rect x="'+x+'" y="'+baseY+'" width="'+NW+'" height="'+HDRH+'" rx="6" fill="#334155"/>');
-    out.push('<text x="'+(x+NW/2)+'" y="'+(baseY+HDRH/2+5)+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff">'+col.proc+'</text>');
+    out.push('<text x="'+(x+NW/2)+'" y="'+(baseY+HDRH/2+5)+'" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">'+col.proc+'</text>');
     if (ci < cols.length-1) {
       var ay = baseY+HDRH/2;
       out.push('<line x1="'+(x+NW)+'" y1="'+ay+'" x2="'+(x+NW+CGAP-8)+'" y2="'+ay+'" stroke="#94a3b8" stroke-width="1.5"/>');
@@ -432,9 +432,9 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
         out.push('<rect x="'+(x+4)+'" y="'+(ny-7)+'" width="24" height="12" rx="6" fill="#64748b"/>');
         out.push('<text x="'+(x+16)+'" y="'+(ny+1)+'" text-anchor="middle" font-size="7" fill="#fff">候補</text>');
       }
-      out.push('<text x="'+(x+8)+'" y="'+(ny+18)+'" font-size="11" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'">'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</text>');
-      if (s.cost) out.push('<text x="'+(x+8)+'" y="'+(ny+34)+'" font-size="9" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
-      if (s.leadTime) out.push('<text x="'+(x+8)+'" y="'+(ny+48)+'" font-size="9" fill="#64748b">LT:'+s.leadTime+'&#26085;</text>');
+      out.push('<text x="'+(x+8)+'" y="'+(ny+18)+'" font-size="14" font-weight="'+(isSel?'bold':'normal')+'" fill="'+(isSel?'#1e3a8a':'#374151')+'">'+((s.name||'未入力').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</text>');
+      if (s.cost) out.push('<text x="'+(x+8)+'" y="'+(ny+34)+'" font-size="12" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
+      if (s.leadTime) out.push('<text x="'+(x+8)+'" y="'+(ny+48)+'" font-size="12" fill="#64748b">LT:'+s.leadTime+'&#26085;</text>');
     });
     // 採用ルート矢印（緑）
     if (ci>0) {
@@ -918,25 +918,24 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
 
   // data属性でDOM要素を検索してBoundingRectを取得
   function getElPos(cont, partId, ci, role) {
-    // role: "adopted" | "win" | "cand" | "any"
+    // nodeRefs ベースで要素を取得
+    var key = partId + "_" + ci;
     var sel;
     if (role === "adopted") {
-      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_adopted"]');
+      sel = nodeRefs.current[key + "_adopted"] || nodeRefs.current[key];
     } else if (role === "win") {
-      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_win"]');
+      sel = nodeRefs.current[key + "_w"];
     } else if (role === "cand") {
-      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_cand"]');
+      sel = nodeRefs.current[key + "_cand"];
     } else {
-      // any: 採用→検討→候補→先頭の優先順
-      sel = cont.querySelector('[data-node="' + partId + '_' + ci + '_adopted"]')
-         || cont.querySelector('[data-node="' + partId + '_' + ci + '_win"]')
-         || cont.querySelector('[data-node="' + partId + '_' + ci + '_cand"]')
-         || cont.querySelector('[data-part="' + partId + '"][data-ci="' + ci + '"]');
+      sel = nodeRefs.current[key + "_adopted"]
+         || nodeRefs.current[key + "_w"]
+         || nodeRefs.current[key + "_cand"]
+         || nodeRefs.current[key];
     }
     if (!sel) return null;
     var eRect = sel.getBoundingClientRect();
     var cRect = cont.getBoundingClientRect();
-    // containerのscrollLeftのみ加算（縦スクロールは相殺される）
     var sl = cont.scrollLeft || 0;
     return { left: eRect.left - cRect.left + sl, right: eRect.right - cRect.left + sl,
              top: eRect.top - cRect.top, bottom: eRect.bottom - cRect.top,
@@ -1139,7 +1138,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
       })}
 
       {/* 工程ヘッダー */}
-      <div style={{ display: "flex", marginBottom: 8, marginLeft: FLABEL_W, position: "relative", zIndex: 1 }}>
+      <div style={{ display: "flex", marginBottom: 8, marginLeft: 80 + 6 + FLABEL_W, position: "relative", zIndex: 1 }}>
         {processes.map(function(proc, ci) {
           return (
             <div key={ci} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
