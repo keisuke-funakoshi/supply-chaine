@@ -255,7 +255,7 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
   var svgW = PAD + LW + procNames.length*NW + (procNames.length-1)*CGAP + PAD;
   var svgH = PAD + 20 + HDRH + maxRows*(NH+NGAP) + PAD;
   var out = [];
-  out.push('<svg xmlns="http://www.w3.org/2000/svg" width="'+svgW+'" height="'+svgH+'" style="background:#fff;font-family:Arial,sans-serif">');
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+svgW+' '+svgH+'" preserveAspectRatio="xMinYMin meet" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
   out.push('<rect width="'+svgW+'" height="'+svgH+'" fill="#fff"/>');
   var titleY = PAD+14;
   out.push('<text x="'+PAD+'" y="'+titleY+'" font-size="13" font-weight="bold" fill="#1e293b">'+(catName?catName+' / ':'')+partName+'</text>');
@@ -328,7 +328,7 @@ function exportPDF(mode, themeName, targetParts, categories, processes, getCell)
     });
   }
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;</title>'
-    +'<style>body{margin:0;padding:16px;background:#fff}@media print{body{margin:0;padding:0}@page{size:landscape;margin:10mm}}</style>'
+    +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto}@media print{body{margin:0;padding:0}@page{size:landscape;margin:8mm}svg{max-width:100%;height:auto}}</style>'
     +'</head><body>'+pages.join('')
     +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},600);};<\/scr'+'ipt>'
     +'</body></html>';
@@ -712,9 +712,10 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
     if (!sel) return null;
     var eRect = sel.getBoundingClientRect();
     var cRect = cont.getBoundingClientRect();
-    // position:fixed SVG用: ビューポート基準の座標をそのまま使用
-    return { left: eRect.left, right: eRect.right,
-             top: eRect.top, bottom: eRect.bottom,
+    // containerのscrollLeftのみ加算（縦スクロールは相殺される）
+    var sl = cont.scrollLeft || 0;
+    return { left: eRect.left - cRect.left + sl, right: eRect.right - cRect.left + sl,
+             top: eRect.top - cRect.top, bottom: eRect.bottom - cRect.top,
              width: eRect.width, height: eRect.height };
   }
 
@@ -854,7 +855,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
 
       {/* SVGオーバーレイ：採用線 + 検討点線 + 候補点線 + 合流線 */}
       {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0) && (
-        <svg style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 100, overflow: "visible" }}>
+        <svg style={{ position: "absolute", top: 0, left: 0, width: "10000px", height: "10000px", pointerEvents: "none", zIndex: 10, overflow: "visible" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
@@ -907,7 +908,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, processes,
         return (
           <div key={"del-" + line.id}
             onClick={function() { removeCrossLink(line.id); }}
-            style={{ position: "fixed", left: mx - 10, top: my - 10, width: 20, height: 20, background: "#6366f1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 200, fontSize: 12, color: "#fff", fontWeight: 700, userSelect: "none" }}>
+            style={{ position: "absolute", left: mx - 10, top: my - 10, width: 20, height: 20, background: "#6366f1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 20, fontSize: 12, color: "#fff", fontWeight: 700, userSelect: "none" }}>
             ×
           </div>
         );
