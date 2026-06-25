@@ -263,7 +263,18 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
   var baseY = PAD+20;
   out.push('<rect x="'+PAD+'" y="'+(baseY+HDRH)+'" width="'+LW+'" height="'+(maxRows*(NH+NGAP))+'" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>');
   out.push('<text x="'+(PAD+LW/2)+'" y="'+(baseY+HDRH+maxRows*(NH+NGAP)/2+5)+'" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">'+partName+'</text>');
-  out.push('<defs><marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#16a34a"/></marker></defs>');
+  out.push('<defs>'+
+    '<marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#16a34a"/></marker>'+
+    '<marker id="gy" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#f59e0b"/></marker>'+
+    '</defs>');
+  // 各工程のwinnerIdを計算
+  var winnerIds = cols.map(function(col) {
+    if (!col.suppliers.length) return null;
+    var scores = col.suppliers.map(function(s) { return scoreSupplier(s, col.suppliers); });
+    var maxScore = Math.max.apply(null, scores);
+    if (maxScore <= 0) return null;
+    return col.suppliers[scores.indexOf(maxScore)].id;
+  });
   cols.forEach(function(col, ci) {
     var x = PAD+LW+ci*(NW+CGAP);
     out.push('<rect x="'+x+'" y="'+baseY+'" width="'+NW+'" height="'+HDRH+'" rx="6" fill="#334155"/>');
@@ -292,7 +303,7 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
       if (s.cost) out.push('<text x="'+(x+8)+'" y="'+(ny+34)+'" font-size="9" fill="#2563eb">&#165;'+parseFloat(s.cost).toLocaleString()+'</text>');
       if (s.leadTime) out.push('<text x="'+(x+8)+'" y="'+(ny+48)+'" font-size="9" fill="#64748b">LT:'+s.leadTime+'&#26085;</text>');
     });
-    // 採用ルート矢印
+    // 採用ルート矢印（緑）
     if (ci>0) {
       var prev = cols[ci-1];
       if (prev.selected && col.selected) {
@@ -304,6 +315,34 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
           var cx3 = PAD+LW+ci*(NW+CGAP);
           var cy3 = baseY+HDRH+csi2*(NH+NGAP)+NH/2;
           out.push('<line x1="'+px2+'" y1="'+py2+'" x2="'+(cx3-6)+'" y2="'+cy3+'" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ga)"/>');
+        }
+      }
+      // 検討ルート矢印（黄色点線）: winnerId同士
+      var prevWin = winnerIds[ci-1];
+      var curWin = winnerIds[ci];
+      if (prevWin && curWin && prevWin !== prev.selected && curWin !== col.selected) {
+        var pwi = prev.suppliers.findIndex(function(s){return s.id===prevWin;});
+        var cwi = col.suppliers.findIndex(function(s){return s.id===curWin;});
+        if (pwi>=0 && cwi>=0) {
+          var wx1 = PAD+LW+(ci-1)*(NW+CGAP)+NW;
+          var wy1 = baseY+HDRH+pwi*(NH+NGAP)+NH/2;
+          var wx2 = PAD+LW+ci*(NW+CGAP);
+          var wy2 = baseY+HDRH+cwi*(NH+NGAP)+NH/2;
+          out.push('<line x1="'+wx1+'" y1="'+wy1+'" x2="'+(wx2-6)+'" y2="'+wy2+'" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#gy)" opacity="0.8"/>');
+        }
+      }
+      // 候補ルート矢印（グレー点線）: candidates先頭同士
+      var prevCand = prev.candidates.find(function(id){ return id !== prev.selected; });
+      var curCand = col.candidates.find(function(id){ return id !== col.selected; });
+      if (prevCand && curCand) {
+        var pci2 = prev.suppliers.findIndex(function(s){return s.id===prevCand;});
+        var cci2 = col.suppliers.findIndex(function(s){return s.id===curCand;});
+        if (pci2>=0 && cci2>=0) {
+          var bx1 = PAD+LW+(ci-1)*(NW+CGAP)+NW;
+          var by1 = baseY+HDRH+pci2*(NH+NGAP)+NH/2;
+          var bx2 = PAD+LW+ci*(NW+CGAP);
+          var by2 = baseY+HDRH+cci2*(NH+NGAP)+NH/2;
+          out.push('<line x1="'+bx1+'" y1="'+by1+'" x2="'+(bx2-6)+'" y2="'+by2+'" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3" opacity="0.6"/>');
         }
       }
     }
