@@ -639,50 +639,16 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     // 縦に溢れた大分類は次ページへ（JSで動的改ページ）
     var catIds = [];
     targetParts.forEach(function(p){ if(catIds.indexOf(p.categoryId)<0) catIds.push(p.categoryId); });
-    var blocks = [];
-    // 1大分類あたり、部品をチャンク分割（大きすぎる大分類を複数SVGに分けて改ページ可能に）
-    // 縮小後でA4横1ページに入る部品行数の目安（サプライヤー1段なら多く、複数段なら少なく）
-    function maxSuppliersInPart(pid) {
-      var m = 1;
-      processes.forEach(function(_, ci) {
-        var c = getCell(pid, ci);
-        var n = (c && c.suppliers) ? c.suppliers.length : 0;
-        if (n > m) m = n;
-      });
-      return m;
-    }
     if (catIds.length === 0) {
-      blocks.push('<div class="catblock">'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
+      pages.push('<div class="onepage">'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
     } else {
-      // 縮小率を考慮: SVG幅 → A4横印刷幅へ縮小される
-      var NW2=220, CGAP2=36, LW2=150, CAT_W2=32, PAD2=14, NH2=120, NGAP2=6, HDRH2=44;
-      var LEFT2 = PAD2 + CAT_W2 + 10 + LW2 + 10;
-      var svgFullW = LEFT2 + processes.length*NW2 + (processes.length-1)*CGAP2 + PAD2;
-      var A4W = 1040, A4H = 680;  // A4横の印刷可能サイズ(px)
-      var scale = Math.min(1, A4W / svgFullW);
-      // 縮小後の1段の高さ
-      var rowUnitH = (NH2 + NGAP2) * scale;
-      var headerH = (HDRH2 + 30) * scale;  // 工程ヘッダー+テーマ名
-      // 1ページに入る段数（ヘッダー分を引く）
-      var maxRowsPerPage = Math.max(2, Math.floor((A4H - headerH) / rowUnitH));
-      catIds.forEach(function(catId) {
-        var catParts = targetParts.filter(function(p){ return p.categoryId === catId; });
-        var chunks = [], cur = [], curRows = 0;
-        catParts.forEach(function(p) {
-          var rows = maxSuppliersInPart(p.id);
-          if (cur.length > 0 && curRows + rows > maxRowsPerPage) {
-            chunks.push(cur); cur = []; curRows = 0;
-          }
-          cur.push(p.id); curRows += rows;
-        });
-        if (cur.length) chunks.push(cur);
-        chunks.forEach(function(partIds) {
-          var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId, null, partIds);
-          blocks.push('<div class="catblock">'+svg+'</div>');
-        });
+      // 大分類ごとに1ページ。各ページ内で縮小して必ず収める
+      catIds.forEach(function(catId, idx) {
+        var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId);
+        var brk = (idx < catIds.length-1) ? ' style="page-break-after:always"' : '';
+        pages.push('<div class="onepage"'+brk+'>'+svg+'</div>');
       });
     }
-    pages.push('<div class="procpage">'+blocks.join('')+'</div>');
   } else {
     targetParts.forEach(function(part, i) {
       var cat = categories.find(function(c){return c.id===part.categoryId;});
@@ -691,25 +657,9 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     });
   }
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;</title>'
-    +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto;display:block}.catblock{page-break-inside:avoid;break-inside:avoid;-webkit-column-break-inside:avoid;display:block;margin-bottom:12px;overflow:visible}@media print{body{margin:0;padding:0}@page{size:landscape;margin:6mm}svg{max-width:100%;width:100%;height:auto;display:block}.catblock{page-break-inside:avoid !important;break-inside:avoid !important;-webkit-column-break-inside:avoid !important;display:block;margin-bottom:6px}}</style>'
+    +'<style>body{margin:0;padding:0;background:#fff}.onepage{width:100%;height:auto;page-break-inside:avoid;break-inside:avoid;text-align:center;overflow:hidden}.onepage svg{max-width:100%;max-height:195mm;width:auto;height:auto;display:inline-block}@media print{body{margin:0;padding:0}@page{size:landscape;margin:5mm}.onepage{page-break-inside:avoid !important;break-inside:avoid !important;height:auto;overflow:hidden}.onepage svg{max-width:100%;max-height:195mm;width:auto;height:auto}}</style>'
     +'</head><body>'+pages.join('')
-    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){'
-    +'var PAGE_H=720;'
-    +'var procpages=document.querySelectorAll(".procpage");'
-    +'procpages.forEach(function(pp){'
-    +'  var blocks=pp.querySelectorAll(".catblock");'
-    +'  var accH=0;'
-    +'  blocks.forEach(function(b){'
-    +'    var h=b.getBoundingClientRect().height;'
-    +'    if(accH>0 && accH+h>PAGE_H){'
-    +'      b.style.pageBreakBefore="always";'
-    +'      b.style.breakBefore="page";'
-    +'      accH=h;'
-    +'    } else { accH+=h; }'
-    +'  });'
-    +'});'
-    +'setTimeout(function(){window.print();},300);'
-    +'},600);};<\/scr'+'ipt>'
+    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},500);};<\/scr'+'ipt>'
     +'</body></html>';
   var win = window.open('','_blank');
   if (win){win.document.write(html);win.document.close();}
