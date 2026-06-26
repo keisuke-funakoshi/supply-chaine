@@ -654,14 +654,23 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     if (catIds.length === 0) {
       blocks.push('<div class="catblock">'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
     } else {
+      // 縮小率を考慮: SVG幅 → A4横印刷幅へ縮小される
+      var NW2=220, CGAP2=36, LW2=150, CAT_W2=32, PAD2=14, NH2=120, NGAP2=6, HDRH2=44;
+      var LEFT2 = PAD2 + CAT_W2 + 10 + LW2 + 10;
+      var svgFullW = LEFT2 + processes.length*NW2 + (processes.length-1)*CGAP2 + PAD2;
+      var A4W = 1040, A4H = 680;  // A4横の印刷可能サイズ(px)
+      var scale = Math.min(1, A4W / svgFullW);
+      // 縮小後の1段の高さ
+      var rowUnitH = (NH2 + NGAP2) * scale;
+      var headerH = (HDRH2 + 30) * scale;  // 工程ヘッダー+テーマ名
+      // 1ページに入る段数（ヘッダー分を引く）
+      var maxRowsPerPage = Math.max(2, Math.floor((A4H - headerH) / rowUnitH));
       catIds.forEach(function(catId) {
         var catParts = targetParts.filter(function(p){ return p.categoryId === catId; });
-        // 部品ごとの高さ（サプライヤー段数）を見て、1チャンクの累積段数が一定を超えたら分割
-        var MAX_ROWS_PER_CHUNK = 7;  // 縮小後に1ページに収まる部品段数の目安
         var chunks = [], cur = [], curRows = 0;
         catParts.forEach(function(p) {
           var rows = maxSuppliersInPart(p.id);
-          if (cur.length > 0 && curRows + rows > MAX_ROWS_PER_CHUNK) {
+          if (cur.length > 0 && curRows + rows > maxRowsPerPage) {
             chunks.push(cur); cur = []; curRows = 0;
           }
           cur.push(p.id); curRows += rows;
@@ -685,7 +694,7 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto;display:block}.catblock{page-break-inside:avoid;break-inside:avoid;-webkit-column-break-inside:avoid;display:block;margin-bottom:12px;overflow:visible}@media print{body{margin:0;padding:0}@page{size:landscape;margin:6mm}svg{max-width:100%;width:100%;height:auto;display:block}.catblock{page-break-inside:avoid !important;break-inside:avoid !important;-webkit-column-break-inside:avoid !important;display:block;margin-bottom:6px}}</style>'
     +'</head><body>'+pages.join('')
     +'<scr'+'ipt>window.onload=function(){setTimeout(function(){'
-    +'var PAGE_H=700;'
+    +'var PAGE_H=720;'
     +'var procpages=document.querySelectorAll(".procpage");'
     +'procpages.forEach(function(pp){'
     +'  var blocks=pp.querySelectorAll(".catblock");'
