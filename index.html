@@ -490,7 +490,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
       if(ci2-ci1!==1) continue;
       var pm1=partYMap[part.id][ci1], pm2=partYMap[part.id][ci2];
       if(!pm1||!pm2||pm1.rowStartY===undefined) continue;
-      var midY=pm1.rowStartY + pm1.rowH/2;
+      var midY=pm1.rowStartY + NH/2;
       var x1=pm1.x+NW, x2=pm2.x;
       out.push('<line x1="'+x1+'" y1="'+midY+'" x2="'+x2+'" y2="'+midY+'" stroke="#312e81" stroke-width="9" stroke-linecap="round" opacity="0.9"/>');
       out.push('<line x1="'+x1+'" y1="'+midY+'" x2="'+x2+'" y2="'+midY+'" stroke="#a78bfa" stroke-width="3.5" stroke-linecap="round"/>');
@@ -1221,15 +1221,21 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
       for (var i = 0; i < candCols.length - 1; i++) {
         var ci1 = candCols[i], ci2 = candCols[i+1];
         if (ci2 - ci1 !== 1) continue;
-        var el1 = nodeRefs.current[part.id + '_' + ci1];
-        var el2 = nodeRefs.current[part.id + '_' + ci2];
-        var r1 = getPos(el1), r2 = getPos(el2);
-        if (!r1 || !r2) continue;
-        var midY = (r1.top + r1.bottom) / 2;
+        // 工程列全体（x座標用）と先頭カード（y座標用）
+        var col1 = nodeRefs.current[part.id + '_' + ci1];
+        var col2 = nodeRefs.current[part.id + '_' + ci2];
+        var first1 = nodeRefs.current[part.id + '_' + ci1 + '_first'] || col1;
+        var first2 = nodeRefs.current[part.id + '_' + ci2 + '_first'] || col2;
+        var c1 = getPos(col1), c2 = getPos(col2);
+        var f1 = getPos(first1), f2 = getPos(first2);
+        if (!c1 || !c2 || !f1 || !f2) continue;
+        // Y座標は先頭カードの中央、X座標は工程列の端
+        var y1 = (f1.top + f1.bottom) / 2;
+        var y2 = (f2.top + f2.bottom) / 2;
         cLines.push({
           id: 'cand_' + part.id + '_' + ci1 + '_' + ci2,
-          x1: r1.right, y1: midY,
-          x2: r2.left,  y2: midY,
+          x1: c1.right, y1: y1,
+          x2: c2.left,  y2: y2,
           isProc: true
         });
       }
@@ -1521,6 +1527,7 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
                                           <div key={s.id}
                                             ref={function(el) {
                                               if (!el) return;
+                                              if (si === 0) nodeRefs.current[nodeKey + "_first"] = el;
                                               if (isSel) nodeRefs.current[nodeKey] = el;
                                               if (isSel) nodeRefs.current[nodeKey + "_adopted"] = el;
                                               if (isWin) nodeRefs.current[nodeKey + "_w"] = el;
