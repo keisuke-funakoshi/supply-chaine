@@ -8,7 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="商流"/>
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#020817}</style>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#020817}
+@media print { * { overflow: visible !important; } @page { size: landscape; margin: 10mm; } svg { display: block !important; } }
+</style>
   <script>
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister();});});
@@ -1106,11 +1108,12 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
     // 要素がビューポート外かチェック（非表示の場合は無効）
 
     var eRect = sel.getBoundingClientRect();
-    var cRect = cont.getBoundingClientRect();
-    var sl = (scrollRef.current ? scrollRef.current.scrollLeft : 0);
-    var st = (scrollRef.current ? scrollRef.current.scrollTop : 0);
-    return { left: eRect.left - cRect.left + sl, right: eRect.right - cRect.left + sl,
-             top: eRect.top - cRect.top + st, bottom: eRect.bottom - cRect.top + st,
+    // SVGがscrollRef内にあるのでscrollRef基準の座標を返す
+    var base = (scrollRef.current || cont).getBoundingClientRect();
+    var sl = scrollRef.current ? scrollRef.current.scrollLeft : 0;
+    var st = scrollRef.current ? scrollRef.current.scrollTop : 0;
+    return { left: eRect.left - base.left + sl, right: eRect.right - base.left + sl,
+             top: eRect.top - base.top + st, bottom: eRect.bottom - base.top + st,
              width: eRect.width, height: eRect.height };
   }
 
@@ -1227,7 +1230,63 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
 
   return (
     <div ref={containerRef} style={{ position: "relative", overflow: "visible" }}>
-      {/* 部品間合流線ダイアログ */}
+
+      <div ref={function(el){scrollRef.current=el;}} style={{ overflowX: "auto", overflowY: "visible", position: "relative" }}>
+        {/* SVGオーバーレイ：採用線 + 検討点線 + 候補点線 + 合流線 */}
+      {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0)
+        && <svg style={{ position: "absolute", top: 0, left: 0, width: "10000px", height: "10000px", pointerEvents: "none",
+          zIndex: 10, overflow: "visible" }}>
+          <defs>
+            <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
+            </marker>
+            <marker id="gr-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#22c55e"/>
+            </marker>
+          </defs>
+            {/* 採用→採用 緑実線矢印 */}
+          {arrowLines.map(function(a) {
+            var mx = (a.x1 + a.x2) / 2;
+            var my = Math.min(a.y1, a.y2) - 30;
+            var pathD = a.skip
+              ? "M" + a.x1 + "," + a.y1 + " Q" + mx + "," + my + " " + a.x2 + "," + a.y2
+              : null;
+            return (
+              <g key={a.id}>
+                {a.skip ? (
+                  <path d={pathD} fill="none" stroke="#22c55e" strokeWidth={2.5} strokeDasharray="6,3" markerEnd="url(#gr-arrow)"/>
+                ) : (
+                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={2.5} markerEnd="url(#gr-arrow)"/>
+                )}
+              </g>
+            );
+          })}
+            {/* 候補括り線（白い太線） */}
+          {candLines.map(function(cl) {
+            if (cl.isProc) {
+              return (
+                <g key={cl.id} opacity={0.75}>
+                  <line x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#e2e8f0" strokeWidth={6} strokeLinecap="round"/>
+                  <line x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#fff" strokeWidth={2.5} strokeLinecap="round"/>
+                </g>
+              );
+            }
+            return <line key={cl.id} x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,4" opacity={0.7}/>;
+          })}
+            {/* 部品間合流線（紫点線） */}
+          {svgLines.map(function(line) {
+            var mx = (line.x1 + line.x2) / 2;
+            var my = Math.min(line.y1, line.y2) - 40;
+            return (
+              <path key={line.id}
+                d={"M" + line.x1 + "," + line.y1 + " Q" + mx + "," + my + " " + line.x2 + "," + line.y2}
+                fill="none" stroke="#6366f1" strokeWidth={2} strokeDasharray="6,3" markerEnd="url(#cl-arrow)" opacity={0.85}/>
+            );
+          })}
+        </svg>
+      }
+
+        {/* 部品間合流線ダイアログ */}
       {linkDialog && (
         <div style={{ background: "#0f172a", border: "1px solid #6366f1", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 10 }}>
@@ -1257,77 +1316,6 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
         </div>
       )}
 
-      {/* SVGオーバーレイ：採用線 + 検討点線 + 候補点線 + 合流線 */}
-      {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0) && (
-        <svg style={{ position: "absolute", top: 0, left: 0, width: "10000px", height: "10000px", pointerEvents: "none", zIndex: 10, overflow: "visible" }}>
-          <defs>
-            <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
-            </marker>
-            <marker id="gr-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill="#22c55e"/>
-            </marker>
-          </defs>
-          {/* 採用→採用 緑実線矢印 */}
-          {arrowLines.map(function(a) {
-            var mx = (a.x1 + a.x2) / 2;
-            var my = Math.min(a.y1, a.y2) - 30;
-            var pathD = a.skip
-              ? "M" + a.x1 + "," + a.y1 + " Q" + mx + "," + my + " " + a.x2 + "," + a.y2
-              : null;
-            return (
-              <g key={a.id}>
-                {!a.skip && <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={7} opacity={0.12}/>}
-                {a.skip ? (
-                  <path d={pathD} fill="none" stroke="#22c55e" strokeWidth={2.5} strokeDasharray="6,3" markerEnd="url(#gr-arrow)" opacity={0.9}/>
-                ) : (
-                  <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#22c55e" strokeWidth={2.5} markerEnd="url(#gr-arrow)" opacity={1}/>
-                )}
-              </g>
-            );
-          })}
-          {/* 検討→検討 グレー点線 */}
-          {winLines.map(function(wl) {
-            return <line key={wl.id} x1={wl.x1} y1={wl.y1} x2={wl.x2} y2={wl.y2} stroke="#475569" strokeWidth={1.5} strokeDasharray="5,4" opacity={0.7}/>;
-          })}
-          {/* 候補→候補 黄色点線 */}
-          {candLines.map(function(cl) {
-            if (cl.isProc) {
-              // 工程ヘッダー間の括り線（太い白線）
-              return (
-                <g key={cl.id} opacity={0.75}>
-                  <line x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#e2e8f0" strokeWidth={6} strokeLinecap="round"/>
-                  <line x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#fff" strokeWidth={2.5} strokeLinecap="round"/>
-                </g>
-              );
-            }
-            return <line key={cl.id} x1={cl.x1} y1={cl.y1} x2={cl.x2} y2={cl.y2} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,4" opacity={0.7}/>;
-          })}
-          {/* 部品間合流線 */}
-          {svgLines.map(function(line) {
-            return (
-              <path key={line.id}
-                d={"M"+line.x1+","+line.y1+" C"+(line.x1+60)+","+line.y1+" "+(line.x2-60)+","+line.y2+" "+line.x2+","+line.y2}
-                fill="none" stroke="#6366f1" strokeWidth={2.5} opacity={0.85} markerEnd="url(#cl-arrow)"/>
-            );
-          })}
-        </svg>
-      )}
-
-      {/* 合流線削除ボタン（DOM要素で実装、確実にクリック可） */}
-      {svgLines.map(function(line, idx) {
-        var mx = (line.x1 + line.x2) / 2;
-        var my = (line.y1 + line.y2) / 2;
-        return (
-          <div key={"del-" + line.id}
-            onClick={function() { removeCrossLink(line.id); }}
-            style={{ position: "absolute", left: mx - 10, top: my - 10, width: 20, height: 20, background: "#6366f1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 20, fontSize: 12, color: "#fff", fontWeight: 700, userSelect: "none" }}>
-            ×
-          </div>
-        );
-      })}
-
-      <div ref={function(el){scrollRef.current=el;}} style={{ overflowX: "auto", overflowY: "visible" }}>
       {/* 工程ヘッダー */}
       <div style={{ display: "flex", marginBottom: 8, marginLeft: 80 + 6 + FLABEL_W, position: "relative", zIndex: 1 }}>
         {processes.map(function(proc, ci) {
