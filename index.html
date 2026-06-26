@@ -636,7 +636,10 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     } else {
       catIds.forEach(function(catId) {
         var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId);
-        pages.push('<div class="catblock">'+svg+'</div>');
+        // viewBoxから縦横比を取得して、印刷時の実高さを推定
+        var vb = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
+        var ratio = vb ? (parseFloat(vb[2]) / parseFloat(vb[1])) : 0.3;
+        pages.push('<div class="catblock" data-ratio="'+ratio.toFixed(3)+'">'+svg+'</div>');
       });
     }
   } else {
@@ -647,9 +650,24 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     });
   }
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;</title>'
-    +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto;display:block}.catblock{page-break-inside:avoid;margin-bottom:12px}@media print{body{margin:0;padding:0}@page{size:landscape;margin:6mm}svg{max-width:100%;width:100%;height:auto}.catblock{page-break-inside:avoid;margin-bottom:8px}}</style>'
+    +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto;display:block}.catblock{page-break-inside:avoid;break-inside:avoid;-webkit-column-break-inside:avoid;display:block;margin-bottom:12px;overflow:visible}@media print{body{margin:0;padding:0}@page{size:landscape;margin:6mm}svg{max-width:100%;width:100%;height:auto;display:block}.catblock{page-break-inside:avoid !important;break-inside:avoid !important;-webkit-column-break-inside:avoid !important;display:block;margin-bottom:6px}}</style>'
     +'</head><body>'+pages.join('')
-    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},600);};<\/scr'+'ipt>'
+    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){'
+    +'var PAGE_H=740;'  // ページ高さの目安（ビューポート基準）
+    +'var blocks=document.querySelectorAll(".catblock");'
+    +'var accH=0;'
+    +'blocks.forEach(function(b){'
+    +'  var h=b.getBoundingClientRect().height;'
+    +'  if(accH>0 && accH+h>PAGE_H){'  // 現ページに入りきらない
+    +'    b.style.pageBreakBefore="always";'
+    +'    b.style.breakBefore="page";'
+    +'    accH=h;'
+    +'  } else {'
+    +'    accH+=h;'
+    +'  }'
+    +'});'
+    +'setTimeout(function(){window.print();},300);'
+    +'},600);};<\/scr'+'ipt>'
     +'</body></html>';
   var win = window.open('','_blank');
   if (win){win.document.write(html);win.document.close();}
