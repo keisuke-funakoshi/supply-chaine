@@ -253,7 +253,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 
 // --- PDF出力（フロー図SVGをPDF化） ------------------------------------
 // --- PDF出力（白背景・全部品/部品ごと） -----------------------------
-function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks, onlyCatId, procRange) {
+function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks, onlyCatId, procRange, partFilter) {
   var allProcNames = processes.map(function(p){return typeof p==='string'?p:p.name;});
   var procStart = procRange ? procRange[0] : 0;
   var procEnd = procRange ? procRange[1] : allProcNames.length;
@@ -267,6 +267,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
   var catMap={}, catOrder=[];
   targetParts.forEach(function(p){
     if(onlyCatId && p.categoryId!==onlyCatId) return;
+    if(partFilter && partFilter.indexOf(p.id)<0) return;
     if(!catMap[p.categoryId]){catMap[p.categoryId]=[];catOrder.push(p.categoryId);}
     catMap[p.categoryId].push(p);
   });
@@ -639,12 +640,37 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     var catIds = [];
     targetParts.forEach(function(p){ if(catIds.indexOf(p.categoryId)<0) catIds.push(p.categoryId); });
     var blocks = [];
+    // 1大分類あたり、部品をチャンク分割（大きすぎる大分類を複数SVGに分けて改ページ可能に）
+    // 縮小後でA4横1ページに入る部品行数の目安（サプライヤー1段なら多く、複数段なら少なく）
+    function maxSuppliersInPart(pid) {
+      var m = 1;
+      processes.forEach(function(_, ci) {
+        var c = getCell(pid, ci);
+        var n = (c && c.suppliers) ? c.suppliers.length : 0;
+        if (n > m) m = n;
+      });
+      return m;
+    }
     if (catIds.length === 0) {
       blocks.push('<div class="catblock">'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
     } else {
       catIds.forEach(function(catId) {
-        var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId);
-        blocks.push('<div class="catblock">'+svg+'</div>');
+        var catParts = targetParts.filter(function(p){ return p.categoryId === catId; });
+        // 部品ごとの高さ（サプライヤー段数）を見て、1チャンクの累積段数が一定を超えたら分割
+        var MAX_ROWS_PER_CHUNK = 7;  // 縮小後に1ページに収まる部品段数の目安
+        var chunks = [], cur = [], curRows = 0;
+        catParts.forEach(function(p) {
+          var rows = maxSuppliersInPart(p.id);
+          if (cur.length > 0 && curRows + rows > MAX_ROWS_PER_CHUNK) {
+            chunks.push(cur); cur = []; curRows = 0;
+          }
+          cur.push(p.id); curRows += rows;
+        });
+        if (cur.length) chunks.push(cur);
+        chunks.forEach(function(partIds) {
+          var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId, null, partIds);
+          blocks.push('<div class="catblock">'+svg+'</div>');
+        });
       });
     }
     pages.push('<div class="procpage">'+blocks.join('')+'</div>');
