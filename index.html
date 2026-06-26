@@ -82,7 +82,7 @@ function deleteFromArchive(id) {
 }
 
 // --- バックアップ（JSONエクスポート/インポート） -----------------------
-function exportBackup(theme, categories, parts, processes, matrix, archive) {
+function exportBackup(theme, categories, subCategories, parts, processes, matrix, archive) {
   const data = {
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -797,28 +797,62 @@ function ThemePanel({ theme, setTheme, categories, setCategories, subCategories,
               </div>
               {/* 中分類リスト */}
               <div style={{ marginTop: 8, paddingLeft: 10, borderLeft: "2px solid " + cat.color + "33" }}>
-                <div style={{ fontSize: 10, color: "#64748b", marginBottom: 5 }}>中分類</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, fontWeight: 700 }}>中分類</div>
                 {subCategories.filter(sc => sc.categoryId === cat.id).map(sc => (
-                  <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
+                  <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: cat.color, flexShrink: 0 }}/>
                     <input value={sc.name}
                       onChange={e => setSubCategories(subCategories.map(function(s){ return s.id===sc.id ? Object.assign({},s,{name:e.target.value}) : s; }))}
-                      style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }} />
+                      style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", fontSize: 12, padding: "3px 8px" }}
+                    />
+                    <span style={{ fontSize: 10, color: "#64748b", flexShrink: 0 }}>
+                      {parts.filter(function(p){return p.subCategoryId===sc.id;}).length}件
+                    </span>
                     <button onClick={() => showConfirm("「" + sc.name + "」を削除しますか？", () => {
                         setSubCategories(subCategories.filter(s => s.id !== sc.id));
-                        setParts(parts.map(function(p){ return p.subCategoryId===sc.id ? Object.assign({},p,{subCategoryId:null}) : p; }));
+                        setParts(parts.map(function(p){ return p.subCategoryId===sc.id ? Object.assign({},p,{subCategoryId:""}) : p; }));
                       })}
-                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
+                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 14, padding: "0 2px" }}>×</button>
                   </div>
                 ))}
-                <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
-                  <input id={"new-subcat-" + cat.id} placeholder="中分類名を入力"
-                    style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", padding: "3px 7px", fontSize: 11, outline: "none" }}
-                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); var v = e.target.value.trim(); if (v) { setSubCategories(subCategories.concat([{ id: newId(), categoryId: cat.id, name: v }])); e.target.value = ""; } }}} />
-                  <button onClick={() => { var inp = document.getElementById("new-subcat-" + cat.id); if (inp && inp.value.trim()) { setSubCategories(subCategories.concat([{ id: newId(), categoryId: cat.id, name: inp.value.trim() }])); inp.value = ""; }}}
-                    style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", padding: "3px 10px", fontSize: 11, cursor: "pointer" }}>＋</button>
+                <div style={{ display: "flex", gap: 5, marginTop: 6 }}>
+                  <input id={"new-subcat-" + cat.id} placeholder="中分類名（カンマ区切りで複数可）"
+                    style={{ flex: 1, background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", fontSize: 12, padding: "5px 8px" }}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault();
+                      var names = e.target.value.split(/[,、，]/).map(function(s){return s.trim();}).filter(Boolean);
+                      if (names.length) { setSubCategories(subCategories.concat(names.map(function(n){return {id:newId(),categoryId:cat.id,name:n};}))); e.target.value=""; }
+                    }}}
+                  />
+                  <button onClick={() => {
+                    var inp = document.getElementById("new-subcat-" + cat.id);
+                    if (!inp) return;
+                    var names = inp.value.split(/[,、，]/).map(function(s){return s.trim();}).filter(Boolean);
+                    if (names.length) { setSubCategories(subCategories.concat(names.map(function(n){return {id:newId(),categoryId:cat.id,name:n};}))); inp.value=""; }
+                  }} style={{ background: "#334155", border: "none", borderRadius: 6, color: "#e2e8f0", fontSize: 12, padding: "5px 12px", cursor: "pointer", fontWeight: 700 }}>追加</button>
                 </div>
+                {subCategories.filter(sc => sc.categoryId === cat.id).length > 0 && parts.filter(function(p){return p.categoryId===cat.id;}).length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #1e293b" }}>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, fontWeight: 700 }}>部品の中分類を設定</div>
+                    {parts.filter(function(p){return p.categoryId===cat.id;}).map(function(part){
+                      return (
+                        <div key={part.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                          <span style={{ fontSize: 12, color: "#e2e8f0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{part.name}</span>
+                          <select value={part.subCategoryId||""} onChange={function(e){
+                            var val = e.target.value;
+                            setParts(parts.map(function(p2){ return p2.id===part.id ? Object.assign({},p2,{subCategoryId:val||undefined}) : p2; }));
+                          }} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#e2e8f0", fontSize: 11, padding: "3px 6px", maxWidth: 130 }}>
+                            <option value="">なし</option>
+                            {subCategories.filter(function(sc){return sc.categoryId===cat.id;}).map(function(sc){
+                              return <option key={sc.id} value={sc.id}>{sc.name}</option>;
+                            })}
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+
               </div>
             );
           })}
@@ -844,7 +878,7 @@ function ThemePanel({ theme, setTheme, categories, setCategories, subCategories,
 }
 
 // --- セル詳細モーダル -------------------------------------------------
-function CellModal({ partName, processName, cellData, onUpdate, onClose, showConfirm }) {
+function CellModal({ partName, processName, cellData, onUpdate, onClose, showConfirm, allMatrix }) {
   const suppliers = cellData?.suppliers || [];
   const selected = cellData?.selected ?? null;
 
@@ -887,7 +921,39 @@ function CellModal({ partName, processName, cellData, onUpdate, onClose, showCon
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#f1f5f9" }}>{processName}</h2>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={addSupplier} style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 8, color: "#fff", padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>＋ 候補を追加</button>
+            <button onClick={addSupplier} style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 8, color: "#fff", padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>＋ 新規追加</button>
+            {(function(){
+              var masterNames = [];
+              if (allMatrix) {
+                Object.values(allMatrix).forEach(function(cell) {
+                  if (!cell || !cell.suppliers) return;
+                  cell.suppliers.forEach(function(s) {
+                    if (s.name && s.name.trim() && masterNames.indexOf(s.name.trim()) < 0)
+                      masterNames.push(s.name.trim());
+                  });
+                });
+              }
+              var currentNames = suppliers.map(function(s){return s.name;});
+              masterNames = masterNames.filter(function(n){ return currentNames.indexOf(n) < 0; });
+              if (masterNames.length === 0) return null;
+              return (
+                <select onChange={function(e){
+                  var name = e.target.value; if (!name) return;
+                  var master = null;
+                  if (allMatrix) Object.values(allMatrix).forEach(function(cell) {
+                    if (!cell || !cell.suppliers) return;
+                    var found = cell.suppliers.find(function(s){ return s.name === name; });
+                    if (found && !master) master = found;
+                  });
+                  var newSup = Object.assign({}, master || {name:name,cost:"",leadTime:"",quality:"",moq:"",notes:""}, {id:newId()});
+                  onUpdate(Object.assign({}, cellData, {suppliers: suppliers.concat([newSup])}));
+                  e.target.value = "";
+                }} style={{ background: "#1e293b", border: "1px solid #0ea5e9", borderRadius: 8, color: "#0ea5e9", fontSize: 12, padding: "6px 10px", cursor: "pointer", fontWeight: 600 }}>
+                  <option value="">＋ 既存から選択</option>
+                  {masterNames.map(function(n){ return <option key={n} value={n}>{n}</option>; })}
+                </select>
+              );
+            })()}
             <button onClick={onClose} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
           </div>
         </div>
@@ -1628,7 +1694,7 @@ function App() {
       // 全テーマリストを復元（v2形式対応、v1はcurrentのみ）
       const restoredThemes = data.themes || (() => {
         const c = data.current;
-        return [{ theme: c.theme, categories: c.categories, parts: c.parts, processes: c.processes, matrix: c.matrix }];
+        return [{ theme: c.theme, categories: c.categories, subCategories: c.subCategories||[], parts: c.parts, processes: c.processes, matrix: c.matrix }];
       })();
       setThemesRaw(restoredThemes);
       saveThemes(restoredThemes);
@@ -1657,7 +1723,7 @@ function App() {
     const snapshot = {
       id: newId(),
       archivedAt: new Date().toISOString(),
-      theme, categories, parts, processes, matrix,
+      theme, categories, subCategories, parts, processes, matrix,
       completedCells: completedCellsNow, totalCells: totalCellsNow, totalCost: totalCostNow,
     };
     saveToArchive(snapshot);
@@ -1675,7 +1741,7 @@ function App() {
 
   const restoreArchiveItem = (snap) => {
     showConfirm("現在の作業を破棄してこのアーカイブを復元しますか？", () => {
-      updateActiveData({ theme: snap.theme, categories: snap.categories, parts: snap.parts, processes: snap.processes, matrix: snap.matrix });
+      updateActiveData({ theme: snap.theme, categories: snap.categories, subCategories: snap.subCategories||[], parts: snap.parts, processes: snap.processes, matrix: snap.matrix });
       setView("matrix");
     });
   };
@@ -1686,6 +1752,7 @@ function App() {
     const newEntry = {
       theme: newTheme,
       categories: snap.categories,
+      subCategories: snap.subCategories || [],
       parts: snap.parts,
       processes: snap.processes,
       matrix: snap.matrix,
@@ -1716,7 +1783,7 @@ function App() {
     const snapshot = {
       id: (overwrite && origId) ? origId : newId(),
       archivedAt: new Date().toISOString(),
-      theme, categories, parts, processes, matrix,
+      theme, categories, subCategories, parts, processes, matrix,
       completedCells: completedCellsNow,
       totalCells: totalCellsNow,
       totalCost: totalCostNow,
@@ -2401,6 +2468,7 @@ function App() {
           onUpdate={data => setCell(modal.partId, modal.processIdx, data)}
           onClose={() => setModal(null)}
           showConfirm={showConfirm}
+          allMatrix={matrix}
         />
       )}
 
