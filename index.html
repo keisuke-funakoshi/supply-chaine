@@ -9,7 +9,13 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="商流"/>
   <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#020817}
-@media print { * { overflow: visible !important; } @page { size: landscape; margin: 10mm; } svg { display: block !important; } }
+@media print {
+  * { overflow: visible !important; }
+  @page { size: landscape; margin: 5mm; }
+  svg { display: block !important; }
+  button, nav, input, select, textarea { display: none !important; }
+  body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
 </style>
   <script>
     if('serviceWorker' in navigator){
@@ -1108,30 +1114,50 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
     // 要素がビューポート外かチェック（非表示の場合は無効）
 
     var eRect = sel.getBoundingClientRect();
-    // SVGがscrollRef内にあるのでscrollRef基準の座標を返す
-    var base = (scrollRef.current || cont).getBoundingClientRect();
-    var sl = scrollRef.current ? scrollRef.current.scrollLeft : 0;
-    var st = scrollRef.current ? scrollRef.current.scrollTop : 0;
-    return { left: eRect.left - base.left + sl, right: eRect.right - base.left + sl,
-             top: eRect.top - base.top + st, bottom: eRect.bottom - base.top + st,
+    // ビューポート基準の座標をそのまま返す（SVGがposition:fixedのため）
+    return { left: eRect.left, right: eRect.right,
+             top: eRect.top, bottom: eRect.bottom,
              width: eRect.width, height: eRect.height };
   }
 
   function recalcLines() {
     if (!containerRef.current) return;
     var cont = containerRef.current;
+    var scrollEl = scrollRef.current;
+    if (!scrollEl) return;
 
+    // 基準: scrollRef の getBCR + scrollLeft/Top でスクロール込みの絶対座標
+    function getPos(el) {
+      if (!el) return null;
+      var er = el.getBoundingClientRect();
+      // SVGはscrollRef内のposition:absolute（コンテンツと一緒にスクロール）
+      // scrollRefのBCR + scrollLeft/Topでコンテンツ座標を算出
+      var sr = scrollEl.getBoundingClientRect();
+      var sl = scrollEl.scrollLeft;
+      var st = scrollEl.scrollTop;
+      return {
+        left:   er.left   - sr.left + sl,
+        right:  er.right  - sr.left + sl,
+        top:    er.top    - sr.top  + st,
+        bottom: er.bottom - sr.top  + st,
+        width:  er.width,
+        height: er.height
+      };
+    }
 
-    // 部品間合流線（採用優先、なければ検討、なければ候補、なければ先頭）
-    var lines = crossLinks.map(function(link) {
-      var fr = getElPos(cont, link.fromPartId, link.fromProcIdx, "any");
-      var tr = getElPos(cont, link.toPartId, link.toProcIdx, "any");
+    // 合流線
+    var lines2 = crossLinks.map(function(link) {
+      var fEl = nodeRefs.current[link.fromPartId + '_' + link.fromProcIdx + '_adopted']
+             || nodeRefs.current[link.fromPartId + '_' + link.fromProcIdx];
+      var tEl = nodeRefs.current[link.toPartId   + '_' + link.toProcIdx   + '_adopted']
+             || nodeRefs.current[link.toPartId   + '_' + link.toProcIdx];
+      var fr = getPos(fEl), tr = getPos(tEl);
       if (!fr || !tr) return null;
       return { id: link.id, x1: fr.right, y1: fr.top + fr.height/2, x2: tr.left, y2: tr.top + tr.height/2 };
     }).filter(Boolean);
-    setSvgLines(lines);
+    setSvgLines(lines2);
 
-    // 採用→採用 緑実線矢印
+    // 採用線
     var arrows = [];
     displayParts.forEach(function(part) {
       var adoptedCols = [];
@@ -1139,59 +1165,51 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
         var cell = getCell(part.id, ci);
         if (cell && cell.selected) adoptedCols.push(ci);
       });
-
       for (var i = 0; i < adoptedCols.length - 1; i++) {
-        var fromCi = adoptedCols[i], toCi = adoptedCols[i+1];
-        var fr = getElPos(cont, part.id, fromCi, "adopted");
-        var tr = getElPos(cont, part.id, toCi, "adopted");
-
+        var ci1 = adoptedCols[i], ci2 = adoptedCols[i+1];
+        var el1 = nodeRefs.current[part.id + '_' + ci1 + '_adopted'];
+        var el2 = nodeRefs.current[part.id + '_' + ci2 + '_adopted'];
+        var fr = getPos(el1), tr = getPos(el2);
         if (!fr || !tr) continue;
-        if (typeof console !== 'undefined') {
-          console.log('Arrow coords:', part.id, fromCi, '->', toCi,
-            'x1:', Math.round(fr.right), 'y1:', Math.round(fr.top+fr.height/2),
-            'x2:', Math.round(tr.left), 'y2:', Math.round(tr.top+tr.height/2));
-        }
-        arrows.push({ id: part.id+"_arr_"+fromCi+"_"+toCi,
-          x1: fr.right, y1: fr.top+fr.height/2, x2: tr.left, y2: tr.top+tr.height/2,
-          skip: (toCi - fromCi) > 1 });
+        arrows.push({
+          id: part.id + '_arr_' + ci1 + '_' + ci2,
+          x1: fr.right, y1: fr.top + fr.height/2,
+          x2: tr.left,  y2: tr.top + tr.height/2,
+          skip: (ci2 - ci1) > 1
+        });
       }
     });
     setArrowLines(arrows);
 
-    // 候補線: 各部品のサプライヤー塊の間（採用なし工程の隣接工程間）に白線
-    var wLines = [], cLines = [];
+    // 候補線
+    var cLines = [];
     displayParts.forEach(function(part) {
       var candCols = [];
       processes.forEach(function(proc, ci) {
         var cell = getCell(part.id, ci);
-        if (!cell || !cell.suppliers || cell.suppliers.length === 0) return;
-        if (!cell.selected) candCols.push(ci);
+        if (!cell || !cell.suppliers || !cell.suppliers.length) return;
+        if (!cell.selected && cell.candidates && cell.candidates.length) candCols.push(ci);
       });
       for (var i = 0; i < candCols.length - 1; i++) {
-        var ci1 = candCols[i], ci2 = candCols[i + 1];
-        // 隣接工程のみ
+        var ci1 = candCols[i], ci2 = candCols[i+1];
         if (ci2 - ci1 !== 1) continue;
-        var el1 = nodeRefs.current[part.id + "_" + ci1];
-        var el2 = nodeRefs.current[part.id + "_" + ci2];
-        if (!el1 || !el2) continue;
-        var r1 = el1.getBoundingClientRect();
-        var r2 = el2.getBoundingClientRect();
-        var cRect = cont.getBoundingClientRect();
-        var sl = cont.scrollLeft || 0;
-        var midY = (r1.top + r1.bottom) / 2 - cRect.top;
+        var el1 = nodeRefs.current[part.id + '_' + ci1];
+        var el2 = nodeRefs.current[part.id + '_' + ci2];
+        var r1 = getPos(el1), r2 = getPos(el2);
+        if (!r1 || !r2) continue;
+        var midY = (r1.top + r1.bottom) / 2;
         cLines.push({
-          id: "cand_" + part.id + "_" + ci1 + "_" + ci2,
-          x1: r1.right - cRect.left + sl,
-          y1: midY,
-          x2: r2.left - cRect.left + sl,
-          y2: midY,
+          id: 'cand_' + part.id + '_' + ci1 + '_' + ci2,
+          x1: r1.right, y1: midY,
+          x2: r2.left,  y2: midY,
           isProc: true
         });
       }
     });
-    setWinLines(wLines);
+    setWinLines([]);
     setCandLines(cLines);
   }
+
 
   useEffect(function() {
     // DOMが確実に更新された後に実行
@@ -1207,19 +1225,24 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   ]);
 
   useEffect(function() {
-    window.addEventListener('scroll', recalcLines, true);
-    window.addEventListener('resize', recalcLines);
-    var contEl = containerRef.current;
-    var scrollEl = scrollRef.current;
-    if (contEl) contEl.addEventListener('scroll', recalcLines);
-    if (scrollEl) scrollEl.addEventListener('scroll', recalcLines);
+    // スクロール/リサイズ時に線を再計算
+    function onScroll() { recalcLines(); }
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    // scrollRefへの登録はMutationObserverで確実に行う
+    var timer = setInterval(function() {
+      if (scrollRef.current) {
+        scrollRef.current.addEventListener('scroll', onScroll);
+        clearInterval(timer);
+      }
+    }, 100);
     return function() {
-      window.removeEventListener('scroll', recalcLines, true);
-      window.removeEventListener('resize', recalcLines);
-      if (contEl) contEl.removeEventListener('scroll', recalcLines);
-      if (scrollEl) scrollEl.removeEventListener('scroll', recalcLines);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      clearInterval(timer);
+      if (scrollRef.current) scrollRef.current.removeEventListener('scroll', onScroll);
     };
-  }, [crossLinks, displayParts.length, processes.length]);
+  }, []);
 
   if (displayParts.length === 0) return (
     <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155", border: "2px dashed #1e293b", borderRadius: 12 }}>
@@ -1231,11 +1254,43 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   return (
     <div ref={containerRef} style={{ position: "relative", overflow: "visible" }}>
 
+
+
+
       <div ref={function(el){scrollRef.current=el;}} style={{ overflowX: "auto", overflowY: "visible", position: "relative" }}>
+        {/* 部品間合流線ダイアログ */}
+      {linkDialog && (
+        <div style={{ background: "#0f172a", border: "1px solid #6366f1", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 10 }}>
+            🔗 <strong>{linkDialog.fromLabel}</strong> から合流先を選択
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
+            {displayParts.map(function(part) {
+              if (part.id === linkDialog.fromPartId) return null;
+              return processes.map(function(proc, ci) {
+                var cell = getCell(part.id, ci);
+                var hasSup = cell && cell.suppliers && cell.suppliers.length > 0;
+                if (!hasSup) return null;
+                return (
+                  <button key={part.id + "_" + ci}
+                    onClick={function() { addCrossLink(linkDialog.fromPartId, linkDialog.fromProcIdx, part.id, ci); }}
+                    style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, cursor: "pointer", textAlign: "left" }}>
+                    {part.name} → {proc}
+                  </button>
+                );
+              });
+            })}
+          </div>
+          <button onClick={function() { setLinkDialog(null); }}
+            style={{ marginTop: 10, background: "none", border: "1px solid #334155", borderRadius: 7, color: "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>
+            キャンセル
+          </button>
+        </div>
+      )}
+
         {/* SVGオーバーレイ：採用線 + 検討点線 + 候補点線 + 合流線 */}
       {(svgLines.length > 0 || arrowLines.length > 0 || winLines.length > 0 || candLines.length > 0)
-        && <svg style={{ position: "absolute", top: 0, left: 0, width: "10000px", height: "10000px", pointerEvents: "none",
-          zIndex: 10, overflow: "visible" }}>
+        && <svg style={{ position: "absolute", top: 0, left: 0, width: "20000px", height: "20000px", pointerEvents: "none", zIndex: 10, overflow: "visible" }}>
           <defs>
             <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
@@ -1285,36 +1340,6 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
           })}
         </svg>
       }
-
-        {/* 部品間合流線ダイアログ */}
-      {linkDialog && (
-        <div style={{ background: "#0f172a", border: "1px solid #6366f1", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
-          <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 10 }}>
-            🔗 <strong>{linkDialog.fromLabel}</strong> から合流先を選択
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
-            {displayParts.map(function(part) {
-              if (part.id === linkDialog.fromPartId) return null;
-              return processes.map(function(proc, ci) {
-                var cell = getCell(part.id, ci);
-                var hasSup = cell && cell.suppliers && cell.suppliers.length > 0;
-                if (!hasSup) return null;
-                return (
-                  <button key={part.id + "_" + ci}
-                    onClick={function() { addCrossLink(linkDialog.fromPartId, linkDialog.fromProcIdx, part.id, ci); }}
-                    style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#94a3b8", padding: "6px 12px", fontSize: 11, cursor: "pointer", textAlign: "left" }}>
-                    {part.name} → {proc}
-                  </button>
-                );
-              });
-            })}
-          </div>
-          <button onClick={function() { setLinkDialog(null); }}
-            style={{ marginTop: 10, background: "none", border: "1px solid #334155", borderRadius: 7, color: "#475569", padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>
-            キャンセル
-          </button>
-        </div>
-      )}
 
       {/* 工程ヘッダー */}
       <div style={{ display: "flex", marginBottom: 8, marginLeft: 80 + 6 + FLABEL_W, position: "relative", zIndex: 1 }}>
