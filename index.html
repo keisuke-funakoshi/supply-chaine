@@ -253,7 +253,7 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 
 // --- PDF出力（フロー図SVGをPDF化） ------------------------------------
 // --- PDF出力（白背景・全部品/部品ごと） -----------------------------
-function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks) {
+function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks, onlyCatId) {
   var procNames = processes.map(function(p){return typeof p==='string'?p:p.name;});
   var CAT_W=32, NW=240, NH=120, NGAP=6, CGAP=40, LW=160, HDRH=44, PAD=14, ROW_GAP=12;
   var LEFT = PAD + CAT_W + 10 + LW + 10;
@@ -262,6 +262,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
   // 大分類グループ化
   var catMap={}, catOrder=[];
   targetParts.forEach(function(p){
+    if(onlyCatId && p.categoryId!==onlyCatId) return;
     if(!catMap[p.categoryId]){catMap[p.categoryId]=[];catOrder.push(p.categoryId);}
     catMap[p.categoryId].push(p);
   });
@@ -303,7 +304,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
   });
 
   var out=[];
-  out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+svgW+' '+totalH+'" style="background:#fff;font-family:Arial,sans-serif;max-width:100%;height:auto;display:block">');
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+svgW+' '+totalH+'" width="'+svgW+'" height="'+totalH+'" preserveAspectRatio="xMinYMin meet" style="background:#fff;font-family:Arial,sans-serif;width:100%;max-width:100%;height:auto;display:block">');
   out.push('<rect width="'+svgW+'" height="'+totalH+'" fill="#fff"/>');
   out.push('<defs>'+
     '<marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#16a34a"/></marker>'+
@@ -626,8 +627,18 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
 function exportPDF(mode, themeName, targetParts, categories, subCategories, processes, getCell, allParts, crossLinks) {
   var pages = [];
   if (mode==="all") {
-    // 全部品をまとめた大きなSVGを作る（合流線を描くため）
-    pages.push('<div>'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
+    // 大分類ごとに別SVGにして、page-break-inside:avoidで
+    // グループ単位の改ページ（収まる限り同じページに詰める）
+    var catIds = [];
+    targetParts.forEach(function(p){ if(catIds.indexOf(p.categoryId)<0) catIds.push(p.categoryId); });
+    if (catIds.length === 0) {
+      pages.push('<div>'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
+    } else {
+      catIds.forEach(function(catId) {
+        var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId);
+        pages.push('<div class="catblock">'+svg+'</div>');
+      });
+    }
   } else {
     targetParts.forEach(function(part, i) {
       var cat = categories.find(function(c){return c.id===part.categoryId;});
@@ -636,7 +647,7 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     });
   }
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;</title>'
-    +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto}@media print{body{margin:0;padding:0}@page{size:landscape;margin:8mm}svg{max-width:100%;height:auto}}</style>'
+    +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto;display:block}.catblock{page-break-inside:avoid;margin-bottom:12px}@media print{body{margin:0;padding:0}@page{size:landscape;margin:6mm}svg{max-width:100%;width:100%;height:auto}.catblock{page-break-inside:avoid;margin-bottom:8px}}</style>'
     +'</head><body>'+pages.join('')
     +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},600);};<\/scr'+'ipt>'
     +'</body></html>';
