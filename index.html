@@ -445,6 +445,30 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
           partYMap[part.id][ci]={selY:selY,winY:winY,x:cx,rowStartY:curY,rowH:rh};
         });
 
+        // 採用線: 採用工程を集めて隣接ペアを緑線で結ぶ（工程跨ぎ対応）
+        var selCols=[];
+        procNames.forEach(function(proc,ci){
+          var pm=partYMap[part.id][ci];
+          if(pm && pm.selY!==null) selCols.push(ci);
+        });
+        for(var si2=0;si2<selCols.length-1;si2++){
+          var c1=selCols[si2], c2=selCols[si2+1];
+          var pm1=partYMap[part.id][c1], pm2=partYMap[part.id][c2];
+          var x1=pm1.x+NW, x2=pm2.x;
+          out.push('<line x1="'+x1+'" y1="'+pm1.selY+'" x2="'+(x2-4)+'" y2="'+pm2.selY+'" stroke="#16a34a" stroke-width="2.5" marker-end="url(#arr-green)"/>');
+        }
+        // 検討線
+        var winCols=[];
+        procNames.forEach(function(proc,ci){
+          var pm=partYMap[part.id][ci];
+          if(pm && pm.winY!==null) winCols.push(ci);
+        });
+        for(var wi2=0;wi2<winCols.length-1;wi2++){
+          var w1=winCols[wi2], w2=winCols[wi2+1];
+          var pmw1=partYMap[part.id][w1], pmw2=partYMap[part.id][w2];
+          out.push('<line x1="'+(pmw1.x+NW)+'" y1="'+pmw1.winY+'" x2="'+(pmw2.x-4)+'" y2="'+pmw2.winY+'" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arr-yellow)" opacity="0.8"/>');
+        }
+
         curY+=rh+ROW_GAP;
       });
       curY+=4;
@@ -468,8 +492,8 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
       if(!pm1||!pm2||pm1.rowStartY===undefined) continue;
       var midY=pm1.rowStartY + pm1.rowH/2;
       var x1=pm1.x+NW, x2=pm2.x;
-      out.push('<line x1="'+x1+'" y1="'+midY+'" x2="'+x2+'" y2="'+midY+'" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round" opacity="0.7"/>');
-      out.push('<line x1="'+x1+'" y1="'+midY+'" x2="'+x2+'" y2="'+midY+'" stroke="#fff" stroke-width="3" stroke-linecap="round"/>');
+      out.push('<line x1="'+x1+'" y1="'+midY+'" x2="'+x2+'" y2="'+midY+'" stroke="#312e81" stroke-width="9" stroke-linecap="round" opacity="0.9"/>');
+      out.push('<line x1="'+x1+'" y1="'+midY+'" x2="'+x2+'" y2="'+midY+'" stroke="#a78bfa" stroke-width="3.5" stroke-linecap="round"/>');
     }
   });
 
@@ -478,8 +502,12 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
     crossLinks.forEach(function(link){
       var f=partYMap[link.fromPartId]&&partYMap[link.fromPartId][link.fromProcIdx];
       var t=partYMap[link.toPartId]&&partYMap[link.toPartId][link.toProcIdx];
-      if(!f||!t||f.selY===null||t.selY===null) return;
-      var x1=f.x+NW,y1=f.selY,x2=t.x,y2=t.selY;
+      if(!f||!t) return;
+      // 採用があればselY、なければ行中央を使う
+      var fy = f.selY!==null ? f.selY : (f.rowStartY!==undefined ? f.rowStartY+f.rowH/2 : null);
+      var ty = t.selY!==null ? t.selY : (t.rowStartY!==undefined ? t.rowStartY+t.rowH/2 : null);
+      if(fy===null||ty===null) return;
+      var x1=f.x+NW,y1=fy,x2=t.x,y2=ty;
       out.push('<path d="M'+x1+','+y1+' C'+(x1+70)+','+y1+' '+(x2-70)+','+y2+' '+x2+','+y2+'" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="7,3" marker-end="url(#arr-blue)" opacity="0.9"/>');
     });
   }
@@ -1225,22 +1253,36 @@ function FlowView({ partIds, parts, setParts, removePart, categories, subCategor
   ]);
 
   useEffect(function() {
-    // スクロール/リサイズ時に線を再計算
-    function onScroll() { recalcLines(); }
+    var rafId = null;
+    function onScroll() {
+      if (rafId) return;
+      rafId = requestAnimationFrame(function() {
+        recalcLines();
+        rafId = null;
+      });
+    }
+    // キャプチャフェーズで全スクロールを捕捉
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onScroll);
-    // scrollRefへの登録はMutationObserverで確実に行う
+    document.addEventListener('scroll', onScroll, true);
+    var attached = [];
     var timer = setInterval(function() {
-      if (scrollRef.current) {
+      if (scrollRef.current && attached.indexOf(scrollRef.current) < 0) {
         scrollRef.current.addEventListener('scroll', onScroll);
-        clearInterval(timer);
+        attached.push(scrollRef.current);
       }
-    }, 100);
+      if (containerRef.current && attached.indexOf(containerRef.current) < 0) {
+        containerRef.current.addEventListener('scroll', onScroll);
+        attached.push(containerRef.current);
+      }
+    }, 200);
     return function() {
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onScroll);
+      document.removeEventListener('scroll', onScroll, true);
       clearInterval(timer);
-      if (scrollRef.current) scrollRef.current.removeEventListener('scroll', onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+      attached.forEach(function(el){ el.removeEventListener('scroll', onScroll); });
     };
   }, []);
 
