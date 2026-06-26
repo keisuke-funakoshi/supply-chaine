@@ -253,9 +253,13 @@ async function exportExcel(theme, categories, parts, processes, getCell) {
 
 // --- PDF出力（フロー図SVGをPDF化） ------------------------------------
 // --- PDF出力（白背景・全部品/部品ごと） -----------------------------
-function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks, onlyCatId) {
-  var procNames = processes.map(function(p){return typeof p==='string'?p:p.name;});
-  var CAT_W=32, NW=240, NH=120, NGAP=6, CGAP=40, LW=160, HDRH=44, PAD=14, ROW_GAP=12;
+function buildAllPartsSVG(themeName, targetParts, categories, subCategories, processes, getCell, crossLinks, onlyCatId, procRange) {
+  var allProcNames = processes.map(function(p){return typeof p==='string'?p:p.name;});
+  var procStart = procRange ? procRange[0] : 0;
+  var procEnd = procRange ? procRange[1] : allProcNames.length;
+  var procNames = allProcNames.slice(procStart, procEnd);
+  var procOffset = procStart;
+  var CAT_W=32, NW=220, NH=120, NGAP=6, CGAP=36, LW=150, HDRH=44, PAD=14, ROW_GAP=12;
   var LEFT = PAD + CAT_W + 10 + LW + 10;
   var svgW = LEFT + procNames.length*NW + (procNames.length-1)*CGAP + PAD;
 
@@ -271,7 +275,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
   function rowH(part){
     var max=1;
     procNames.forEach(function(_,ci){
-      var c=getCell(part.id,ci);
+      var c=getCell(part.id,ci+procOffset);
       var n=c&&c.suppliers?c.suppliers.length:0;
       if(n>max)max=n;
     });
@@ -384,7 +388,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
         out.push('<text x="'+(lbX+LW/2)+'" y="'+(curY+rh/2+5)+'" text-anchor="middle" font-size="14" font-weight="bold" fill="#334155">'+(part.name||'').replace(/&/g,'&amp;')+'</text>');
 
         procNames.forEach(function(proc,ci){
-          var cell=getCell(part.id,ci);
+          var cell=getCell(part.id,ci+procOffset);
           var sups=cell&&cell.suppliers?cell.suppliers:[];
           var sel=cell?cell.selected:null;
           var cands=cell&&cell.candidates?cell.candidates:[];
@@ -482,7 +486,7 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
     if(!partYMap[part.id]) return;
     var candCols2=[];
     procNames.forEach(function(proc,ci){
-      var cell=getCell(part.id,ci);
+      var cell=getCell(part.id,ci+procOffset);
       if(cell&&cell.suppliers&&cell.suppliers.length>0&&!cell.selected&&cell.candidates&&cell.candidates.length>0)
         candCols2.push(ci);
     });
@@ -501,8 +505,11 @@ function buildAllPartsSVG(themeName, targetParts, categories, subCategories, pro
   // 部品間合流線（青）
   if(crossLinks&&crossLinks.length){
     crossLinks.forEach(function(link){
-      var f=partYMap[link.fromPartId]&&partYMap[link.fromPartId][link.fromProcIdx];
-      var t=partYMap[link.toPartId]&&partYMap[link.toPartId][link.toProcIdx];
+      var fIdx=link.fromProcIdx-procOffset, tIdx=link.toProcIdx-procOffset;
+      // この工程範囲外の合流線はスキップ
+      if(fIdx<0||fIdx>=procNames.length||tIdx<0||tIdx>=procNames.length) return;
+      var f=partYMap[link.fromPartId]&&partYMap[link.fromPartId][fIdx];
+      var t=partYMap[link.toPartId]&&partYMap[link.toPartId][tIdx];
       if(!f||!t) return;
       // 採用があればselY、なければ行中央を使う
       var fy = f.selY!==null ? f.selY : (f.rowStartY!==undefined ? f.rowStartY+f.rowH/2 : null);
@@ -627,21 +634,20 @@ function buildPartSVG(themeName, partName, catName, procNames, getCell, partId) 
 function exportPDF(mode, themeName, targetParts, categories, subCategories, processes, getCell, allParts, crossLinks) {
   var pages = [];
   if (mode==="all") {
-    // 大分類ごとに別SVGにして、page-break-inside:avoidで
-    // グループ単位の改ページ（収まる限り同じページに詰める）
+    // 全工程を横並び（1ページ幅に縮小）、大分類を縦に積む
+    // 縦に溢れた大分類は次ページへ（JSで動的改ページ）
     var catIds = [];
     targetParts.forEach(function(p){ if(catIds.indexOf(p.categoryId)<0) catIds.push(p.categoryId); });
+    var blocks = [];
     if (catIds.length === 0) {
-      pages.push('<div>'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
+      blocks.push('<div class="catblock">'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
     } else {
       catIds.forEach(function(catId) {
         var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId);
-        // viewBoxから縦横比を取得して、印刷時の実高さを推定
-        var vb = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
-        var ratio = vb ? (parseFloat(vb[2]) / parseFloat(vb[1])) : 0.3;
-        pages.push('<div class="catblock" data-ratio="'+ratio.toFixed(3)+'">'+svg+'</div>');
+        blocks.push('<div class="catblock">'+svg+'</div>');
       });
     }
+    pages.push('<div class="procpage">'+blocks.join('')+'</div>');
   } else {
     targetParts.forEach(function(part, i) {
       var cat = categories.find(function(c){return c.id===part.categoryId;});
@@ -653,18 +659,19 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     +'<style>body{margin:0;padding:8px;background:#fff}svg{max-width:100%;height:auto;display:block}.catblock{page-break-inside:avoid;break-inside:avoid;-webkit-column-break-inside:avoid;display:block;margin-bottom:12px;overflow:visible}@media print{body{margin:0;padding:0}@page{size:landscape;margin:6mm}svg{max-width:100%;width:100%;height:auto;display:block}.catblock{page-break-inside:avoid !important;break-inside:avoid !important;-webkit-column-break-inside:avoid !important;display:block;margin-bottom:6px}}</style>'
     +'</head><body>'+pages.join('')
     +'<scr'+'ipt>window.onload=function(){setTimeout(function(){'
-    +'var PAGE_H=740;'  // ページ高さの目安（ビューポート基準）
-    +'var blocks=document.querySelectorAll(".catblock");'
-    +'var accH=0;'
-    +'blocks.forEach(function(b){'
-    +'  var h=b.getBoundingClientRect().height;'
-    +'  if(accH>0 && accH+h>PAGE_H){'  // 現ページに入りきらない
-    +'    b.style.pageBreakBefore="always";'
-    +'    b.style.breakBefore="page";'
-    +'    accH=h;'
-    +'  } else {'
-    +'    accH+=h;'
-    +'  }'
+    +'var PAGE_H=700;'
+    +'var procpages=document.querySelectorAll(".procpage");'
+    +'procpages.forEach(function(pp){'
+    +'  var blocks=pp.querySelectorAll(".catblock");'
+    +'  var accH=0;'
+    +'  blocks.forEach(function(b){'
+    +'    var h=b.getBoundingClientRect().height;'
+    +'    if(accH>0 && accH+h>PAGE_H){'
+    +'      b.style.pageBreakBefore="always";'
+    +'      b.style.breakBefore="page";'
+    +'      accH=h;'
+    +'    } else { accH+=h; }'
+    +'  });'
     +'});'
     +'setTimeout(function(){window.print();},300);'
     +'},600);};<\/scr'+'ipt>'
