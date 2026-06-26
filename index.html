@@ -640,13 +640,52 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     var catIds = [];
     targetParts.forEach(function(p){ if(catIds.indexOf(p.categoryId)<0) catIds.push(p.categoryId); });
     if (catIds.length === 0) {
-      pages.push('<div class="onepage">'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
+      pages.push('<div class="catblock">'+buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [])+'</div>');
     } else {
-      // 大分類ごとに1ページ。各ページ内で縮小して必ず収める
-      catIds.forEach(function(catId, idx) {
-        var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId);
-        var brk = (idx < catIds.length-1) ? ' style="page-break-after:always"' : '';
-        pages.push('<div class="onepage"'+brk+'>'+svg+'</div>');
+      // 大分類ごとに別SVG。大きすぎる大分類のみ部品チャンクに分割
+      // 縮小率から1ページに入る部品段数を算出
+      var NW2=220, CGAP2=36, LW2=150, CAT_W2=32, PAD2=14, NH2=120, NGAP2=6, HDRH2=44;
+      var LEFT2 = PAD2 + CAT_W2 + 10 + LW2 + 10;
+      var svgFullW = LEFT2 + processes.length*NW2 + (processes.length-1)*CGAP2 + PAD2;
+      var A4W = 1040, A4H = 660;
+      var scale = Math.min(1, A4W / svgFullW);
+      var rowUnitH = (NH2 + NGAP2) * scale;
+      var headerH = (HDRH2 + 30) * scale;
+      var maxRowsPerPage = Math.max(2, Math.floor((A4H - headerH) / rowUnitH));
+      function maxSupCount(pid) {
+        var m = 1;
+        processes.forEach(function(_, ci) {
+          var c = getCell(pid, ci);
+          var n = (c && c.suppliers) ? c.suppliers.length : 0;
+          if (n > m) m = n;
+        });
+        return m;
+      }
+      catIds.forEach(function(catId) {
+        var catParts = targetParts.filter(function(p){ return p.categoryId === catId; });
+        // 大分類全体の段数を計算
+        var totalRows = 0;
+        catParts.forEach(function(p){ totalRows += maxSupCount(p.id); });
+        if (totalRows <= maxRowsPerPage) {
+          // 1ページに収まる → 分割せず1ブロック
+          var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId);
+          pages.push('<div class="catblock">'+svg+'</div>');
+        } else {
+          // 大きすぎる → 部品をチャンク分割
+          var chunks = [], cur = [], curRows = 0;
+          catParts.forEach(function(p) {
+            var rows = maxSupCount(p.id);
+            if (cur.length > 0 && curRows + rows > maxRowsPerPage) {
+              chunks.push(cur); cur = []; curRows = 0;
+            }
+            cur.push(p.id); curRows += rows;
+          });
+          if (cur.length) chunks.push(cur);
+          chunks.forEach(function(partIds) {
+            var svg = buildAllPartsSVG(themeName, targetParts, categories, subCategories||[], processes, getCell, crossLinks || [], catId, null, partIds);
+            pages.push('<div class="catblock">'+svg+'</div>');
+          });
+        }
       });
     }
   } else {
@@ -657,9 +696,22 @@ function exportPDF(mode, themeName, targetParts, categories, subCategories, proc
     });
   }
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>&#21830;&#27969;&#12501;&#12525;&#12540;&#22259;</title>'
-    +'<style>body{margin:0;padding:0;background:#fff}.onepage{width:100%;height:auto;page-break-inside:avoid;break-inside:avoid;text-align:center;overflow:hidden}.onepage svg{max-width:100%;max-height:195mm;width:auto;height:auto;display:inline-block}@media print{body{margin:0;padding:0}@page{size:landscape;margin:5mm}.onepage{page-break-inside:avoid !important;break-inside:avoid !important;height:auto;overflow:hidden}.onepage svg{max-width:100%;max-height:195mm;width:auto;height:auto}}</style>'
+    +'<style>body{margin:0;padding:6px;background:#fff}.catblock{page-break-inside:avoid;break-inside:avoid;margin-bottom:10px;overflow:visible}.catblock svg{max-width:100%;width:100%;height:auto;display:block}@media print{body{margin:0;padding:0}@page{size:landscape;margin:5mm}.catblock{page-break-inside:avoid !important;break-inside:avoid !important;margin-bottom:6px}.catblock svg{max-width:100%;width:100%;height:auto}}</style>'
     +'</head><body>'+pages.join('')
-    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},500);};<\/scr'+'ipt>'
+    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){'
+    +'var PAGE_H=700;'
+    +'var blocks=document.querySelectorAll(".catblock");'
+    +'var accH=0;'
+    +'blocks.forEach(function(b){'
+    +'  var h=b.getBoundingClientRect().height;'
+    +'  if(accH>0 && accH+h>PAGE_H){'
+    +'    b.style.pageBreakBefore="always";'
+    +'    b.style.breakBefore="page";'
+    +'    accH=h;'
+    +'  } else { accH+=h; }'
+    +'});'
+    +'setTimeout(function(){window.print();},300);'
+    +'},500);};<\/scr'+'ipt>'
     +'</body></html>';
   var win = window.open('','_blank');
   if (win){win.document.write(html);win.document.close();}
