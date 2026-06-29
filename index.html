@@ -32,7 +32,7 @@
   <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="text/babel" data-presets="env,react">
-var useState=React.useState, useCallback=React.useCallback, useRef=React.useRef;
+var useState=React.useState, useCallback=React.useCallback, useRef=React.useRef, useEffect=React.useEffect;
 var XL=window.XLSX;
 
 // =============================================================
@@ -81,6 +81,15 @@ function productCost(prod){
 
 var fmt=function(n){return '¥'+Math.round(n).toLocaleString('ja-JP');};
 var fmtDate=function(iso){var d=new Date(iso);return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+
+// localStorage 永続化
+var LS_KEY='bom_cost_data_v1';
+function loadData(){
+  try{var raw=localStorage.getItem(LS_KEY);if(!raw)return null;return JSON.parse(raw);}catch(e){return null;}
+}
+function saveData(themes,archives,currentArcId){
+  try{localStorage.setItem(LS_KEY,JSON.stringify({themes:themes,archives:archives,currentArcId:currentArcId}));}catch(e){}
+}
 
 // サンプルデータ
 function makeSample(){
@@ -210,18 +219,24 @@ function NumInput(props){
 
 // ========== App ==========
 function App(){
-  var ts=useState(makeSample);var themes=ts[0],setThemes=ts[1];
+  var saved=loadData();
+  var initThemes=(saved&&saved.themes&&saved.themes.length>0)?saved.themes:makeSample();
+  var ts=useState(initThemes);var themes=ts[0],setThemes=ts[1];
   // 選択状態
-  var sel=useState(function(){var s=makeSample();return {themeId:s[0].id,prodId:s[0].products[0].id};});
+  var sel=useState(function(){return {themeId:initThemes[0]?initThemes[0].id:null,prodId:initThemes[0]&&initThemes[0].products[0]?initThemes[0].products[0].id:null};});
   var selected=sel[0],setSelected=sel[1];
   var tabS=useState('bom');var tab=tabS[0],setTab=tabS[1];
   var sbS=useState(false);var showSB=sbS[0],setShowSB=sbS[1];
-  var arcS=useState([]);var archives=arcS[0],setArchives=arcS[1];
+  var arcS=useState((saved&&saved.archives)?saved.archives:[]);var archives=arcS[0],setArchives=arcS[1];
   var arcNS=useState('');var arcNote=arcNS[0],setArcNote=arcNS[1];
   var arcMS=useState(false);var showAM=arcMS[0],setShowAM=arcMS[1];
-  var curArcS=useState(null);var currentArcId=curArcS[0],setCurrentArcId=curArcS[1];
+  var curArcS=useState((saved&&saved.currentArcId)?saved.currentArcId:null);var currentArcId=curArcS[0],setCurrentArcId=curArcS[1];
   var saveMenuS=useState(false);var showSaveMenu=saveMenuS[0],setShowSaveMenu=saveMenuS[1];
   var importRef=useRef(null);
+
+  // 自動保存（themes/archives/currentArcId変更時にlocalStorageへ）
+  useEffect(function(){saveData(themes,archives,currentArcId);},[themes,archives,currentArcId]);
+
 
   var selTheme=themes.filter(function(t){return t.id===selected.themeId;})[0]||null;
   var selProd=selTheme?selTheme.products.filter(function(p){return p.id===selected.prodId;})[0]||null:null;
