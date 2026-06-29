@@ -304,7 +304,9 @@ function App(){
   // 名前をつけて保存（新規エントリ）
   function saveAsNew(){
     var id=uid('ARC');
-    setArchives(function(prev){return [{id:id,note:arcNote.trim()||'バージョン確定',savedAt:new Date().toISOString(),themes:JSON.parse(JSON.stringify(themes))}].concat(prev);});
+    var defName=themes.length>0?(themes.map(function(t){return t.name;}).join('・')):'保存データ';
+    if(defName.length>30)defName=themes[0].name+' 他'+(themes.length-1)+'案件';
+    setArchives(function(prev){return [{id:id,note:arcNote.trim()||defName,savedAt:new Date().toISOString(),themes:JSON.parse(JSON.stringify(themes))}].concat(prev);});
     setCurrentArcId(id);setArcNote('');setShowAM(false);
   }
   // 上書き保存（現在のアーカイブを更新）
@@ -315,8 +317,8 @@ function App(){
     setArchives(function(prev){return prev.map(function(a){return a.id===currentArcId?Object.assign({},a,{savedAt:new Date().toISOString(),themes:JSON.parse(JSON.stringify(themes))}):a;});});
     setShowSaveMenu(false);
   }
-  function restoreArchive(arc){
-    if(!window.confirm('「'+arc.note+'」を開きますか？現在の編集内容は失われます。'))return;
+  function reeditArchive(arc){
+    if(!window.confirm('「'+arc.note+'」を再編集しますか？現在の編集内容は失われます。'))return;
     setThemes(arc.themes);setSelected({themeId:arc.themes[0]?arc.themes[0].id:null,prodId:arc.themes[0]&&arc.themes[0].products[0]?arc.themes[0].products[0].id:null});
     setCurrentArcId(arc.id);setTab('bom');
   }
@@ -557,7 +559,7 @@ function App(){
                       <div style={{fontSize:13,color:'#8b5cf6',fontWeight:800,marginTop:3}}>{fmt(tot)}</div>
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                      <button onClick={function(){restoreArchive(arc);}} style={{padding:'4px 10px',background:'#1e3a5f',border:'1px solid #3b82f6',borderRadius:6,color:'#60a5fa',fontWeight:700,fontSize:11,cursor:'pointer'}}>復元</button>
+                      <button onClick={function(){reeditArchive(arc);}} style={{padding:'4px 10px',background:'#1e3a5f',border:'1px solid #3b82f6',borderRadius:6,color:'#60a5fa',fontWeight:700,fontSize:11,cursor:'pointer'}}>再編集</button>
                       <button onClick={function(){deleteArchive(arc.id);}} style={{padding:'4px 10px',background:'#3a1a1a',border:'1px solid #7f1d1d',borderRadius:6,color:'#f87171',fontWeight:700,fontSize:11,cursor:'pointer'}}>削除</button>
                     </div>
                   </div>
@@ -586,7 +588,7 @@ function App(){
                 </div>
               );})}
             </div>
-            <input value={arcNote} onChange={function(e){setArcNote(e.target.value);}} placeholder="メモ（例：1次見積確定）" autoFocus
+            <input value={arcNote} onChange={function(e){setArcNote(e.target.value);}} placeholder="保存名（未入力なら案件名）" autoFocus
               onKeyDown={function(e){if(e.key==='Enter')saveAsNew();}}
               style={{width:'100%',background:'#0f1117',border:'1px solid #3b82f6',borderRadius:7,color:'#e2e8f0',padding:'8px 10px',fontSize:13,outline:'none',marginBottom:12}}/>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
