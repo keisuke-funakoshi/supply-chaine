@@ -240,12 +240,12 @@ function App(){
     var prod=selTheme&&selTheme.products.filter(function(p){return p.id===pid;})[0];
     if(!prod)return;
     if(!window.confirm('製品「'+prod.name+'」を削除しますか？'))return;
-    setThemes(function(prev){return prev.map(function(t){return t.id!==tid?t:Object.assign({},t,{products:t.products.filter(function(p){return p.id!==pid;});});});});
+    setThemes(function(prev){return prev.map(function(t){return t.id!==tid?t:Object.assign({},t,{products:t.products.filter(function(p){return p.id!==pid;})});});});
     if(selected.prodId===pid)setSelected({themeId:tid,prodId:null});
   }
   function updProd(fn){
     if(!selected.themeId||!selected.prodId)return;
-    setThemes(function(prev){return prev.map(function(t){return t.id!==selected.themeId?t:Object.assign({},t,{products:t.products.map(function(p){return p.id!==selected.prodId?p:fn(p);});});});});
+    setThemes(function(prev){return prev.map(function(t){return t.id!==selected.themeId?t:Object.assign({},t,{products:t.products.map(function(p){return p.id!==selected.prodId?p:fn(p);})});});});
   }
   function setProdName(n){updProd(function(p){return Object.assign({},p,{name:n});});}
   function setQty(q){updProd(function(p){return Object.assign({},p,{quantity:Math.max(1,Number(q)||1)});});}
@@ -269,8 +269,8 @@ function App(){
   function updMSup(path,mid,sid,f,v){updMat(path,mid,function(m){return Object.assign({},m,{suppliers:m.suppliers.map(function(s){return s.id===sid?Object.assign({},s,(function(o){o[f]=v;return o;})({})):s;})});});}
   function removeMSup(path,mid,sid){updMat(path,mid,function(m){var sups=m.suppliers.filter(function(s){return s.id!==sid;});var ns=sups[0]||null;return Object.assign({},m,{suppliers:sups,selectedSupplierId:ns?ns.id:null,selectedLotId:ns&&ns.lots[0]?ns.lots[0].id:null});});}
   function addMLot(path,mid,sid){updMat(path,mid,function(m){return Object.assign({},m,{suppliers:m.suppliers.map(function(s){if(s.id!==sid)return s;var l=newLot(1,0);return Object.assign({},s,{lots:s.lots.concat([l])});})});});}
-  function updMLot(path,mid,sid,lid,f,v){updMat(path,mid,function(m){return Object.assign({},m,{suppliers:m.suppliers.map(function(s){if(s.id!==sid)return s;return Object.assign({},s,{lots:s.lots.map(function(l){return l.id===lid?Object.assign({},l,(function(o){o[f]=v;return o;})({})):l;});});});});});}
-  function removeMLot(path,mid,sid,lid){updMat(path,mid,function(m){return Object.assign({},m,{suppliers:m.suppliers.map(function(s){if(s.id!==sid)return s;var lots=s.lots.filter(function(l){return l.id!==lid;});return Object.assign({},s,{lots:lots});});});});}
+  function updMLot(path,mid,sid,lid,f,v){updMat(path,mid,function(m){return Object.assign({},m,{suppliers:m.suppliers.map(function(s){if(s.id!==sid)return s;return Object.assign({},s,{lots:s.lots.map(function(l){return l.id===lid?Object.assign({},l,(function(o){o[f]=v;return o;})({})):l;})})})})});}
+  function removeMLot(path,mid,sid,lid){updMat(path,mid,function(m){return Object.assign({},m,{suppliers:m.suppliers.map(function(s){if(s.id!==sid)return s;var lots=s.lots.filter(function(l){return l.id!==lid;});return Object.assign({},s,{lots:lots});})});});}
 
   // 加工
   function addProc(path){updTree(path,function(pt){return Object.assign({},pt,{processes:pt.processes.concat([newProc()])});});}
@@ -283,8 +283,8 @@ function App(){
   function updPSup(path,pid,sid,f,v){updProc(path,pid,function(p){return Object.assign({},p,{suppliers:p.suppliers.map(function(s){return s.id===sid?Object.assign({},s,(function(o){o[f]=v;return o;})({})):s;})});});}
   function removePSup(path,pid,sid){updProc(path,pid,function(p){var sups=p.suppliers.filter(function(s){return s.id!==sid;});var ns=sups[0]||null;return Object.assign({},p,{suppliers:sups,selectedSupplierId:ns?ns.id:null,selectedLotId:ns&&ns.lots[0]?ns.lots[0].id:null});});}
   function addPLot(path,pid,sid){updProc(path,pid,function(p){return Object.assign({},p,{suppliers:p.suppliers.map(function(s){if(s.id!==sid)return s;var l=newLot(1,0);return Object.assign({},s,{lots:s.lots.concat([l])});})});});}
-  function updPLot(path,pid,sid,lid,f,v){updProc(path,pid,function(p){return Object.assign({},p,{suppliers:p.suppliers.map(function(s){if(s.id!==sid)return s;return Object.assign({},s,{lots:s.lots.map(function(l){return l.id===lid?Object.assign({},l,(function(o){o[f]=v;return o;})({})):l;});});});});});}
-  function removePLot(path,pid,sid,lid){updProc(path,pid,function(p){return Object.assign({},p,{suppliers:p.suppliers.map(function(s){if(s.id!==sid)return s;var lots=s.lots.filter(function(l){return l.id!==lid;});return Object.assign({},s,{lots:lots});});});});}
+  function updPLot(path,pid,sid,lid,f,v){updProc(path,pid,function(p){return Object.assign({},p,{suppliers:p.suppliers.map(function(s){if(s.id!==sid)return s;return Object.assign({},s,{lots:s.lots.map(function(l){return l.id===lid?Object.assign({},l,(function(o){o[f]=v;return o;})({})):l;})})})})});}
+  function removePLot(path,pid,sid,lid){updProc(path,pid,function(p){return Object.assign({},p,{suppliers:p.suppliers.map(function(s){if(s.id!==sid)return s;var lots=s.lots.filter(function(l){return l.id!==lid;});return Object.assign({},s,{lots:lots})})})});}
 
   function mkCb(path){return {
     onRename:function(n){renamePart(path,n);},onRemove:function(){removePart(path);},onAddChild:function(){addChild(path);},
